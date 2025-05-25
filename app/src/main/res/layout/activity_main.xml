@@ -13,7 +13,7 @@
         android:id="@+id/titleTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Serving Cell Power"
+        android:text="Cell &amp; Location Info"
         android:textSize="24sp"
         android:textStyle="bold"
         android:layout_marginBottom="24dp" />
@@ -22,7 +22,7 @@
         android:id="@+id/getInfoButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Get Serving Cell Power"
+        android:text="Get Info"
         android:layout_marginBottom="24dp" />
 
     <ScrollView
@@ -34,7 +34,7 @@
             android:id="@+id/infoTextView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Press the button to get serving cell power."
+            android:text="Press the button to get cell and location information."
             android:textSize="16sp"
             android:fontFamily="monospace"
             android:padding="8dp"
