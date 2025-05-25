@@ -31,6 +31,9 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.text.SimpleDateFormat // Import for date formatting
+import java.util.Date // Import for Date object
+import java.util.Locale // Import for Locale
 
 // MainActivity now implements LocationListener to receive location updates
 class MainActivity : AppCompatActivity(), LocationListener {
@@ -51,7 +54,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
         override fun run() {
             // Check permissions before attempting to get info, in case they were revoked
             if (checkPermissionsWithoutRequest()) {
-                getCellInfo() // Get cellular network information
+                getCellInfo() // Get cellular network information and update UI
                 requestLocationUpdates() // Request location updates
             } else {
                 // If permissions are somehow lost, clear info and log
@@ -268,6 +271,10 @@ class MainActivity : AppCompatActivity(), LocationListener {
      */
     private fun getCellInfo() {
         val stringBuilder = StringBuilder()
+
+        // Get current time and format it
+        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        stringBuilder.append("--- Last Updated: $currentTime ---\n\n")
 
         // Append Location Info First
         stringBuilder.append("--- Current Location ---\n")
