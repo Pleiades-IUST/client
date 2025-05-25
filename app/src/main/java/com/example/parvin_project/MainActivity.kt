@@ -292,7 +292,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
         stringBuilder.append("\n") // Separator
 
         // Append Cell Info
-        stringBuilder.append("--- Serving Cell Power ---\n\n")
+        stringBuilder.append("--- Serving Cell Power & IDs ---\n\n")
 
         try {
             val cellInfoList: List<CellInfo>? = telephonyManager.allCellInfo
@@ -307,58 +307,104 @@ class MainActivity : AppCompatActivity(), LocationListener {
                         servingCellFound = true
                         stringBuilder.append("Serving Cell Details:\n")
 
-                        // Extract technology-specific signal strength
+                        // Extract technology-specific signal strength and IDs
                         when (cellInfo) {
                             is CellInfoGsm -> {
                                 val ssGsm: CellSignalStrengthGsm = cellInfo.cellSignalStrength
+                                val cellIdentityGsm = cellInfo.cellIdentity
                                 stringBuilder.append("  Technology: GSM\n")
                                 stringBuilder.append("  Signal Strength (dBm): ${ssGsm.dbm}\n")
+                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityGsm.mcc}-${cellIdentityGsm.mnc}\n")
+                                stringBuilder.append("  LAC: ${cellIdentityGsm.lac}\n")
+                                stringBuilder.append("  Cell ID (CID): ${cellIdentityGsm.cid}\n")
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
+                                    stringBuilder.append("  ARFCN: ${cellIdentityGsm.arfcn}\n")
+                                }
+                                // RAC is less common for GSM and often not directly available or relevant in newer APIs
                             }
                             is CellInfoCdma -> {
                                 val ssCdma: CellSignalStrengthCdma = cellInfo.cellSignalStrength
+                                val cellIdentityCdma = cellInfo.cellIdentity
                                 stringBuilder.append("  Technology: CDMA\n")
                                 stringBuilder.append("  Signal Strength (dBm): ${ssCdma.dbm}\n")
+                                stringBuilder.append("  Network ID: ${cellIdentityCdma.networkId}\n")
+                                stringBuilder.append("  System ID: ${cellIdentityCdma.systemId}\n")
+                                stringBuilder.append("  Base Station ID (Cell ID): ${cellIdentityCdma.basestationId}\n")
+                                // PLMN-ID, LAC, RAC, TAC, ARFCN/Band are not directly applicable to CDMA in the same way
                             }
                             is CellInfoLte -> {
                                 val ssLte: CellSignalStrengthLte = cellInfo.cellSignalStrength
+                                val cellIdentityLte = cellInfo.cellIdentity
                                 stringBuilder.append("  Technology: LTE\n")
                                 stringBuilder.append("  Signal Strength (dBm): ${ssLte.dbm}\n")
-                                stringBuilder.append("  RSRP (dBm): ${ssLte.rsrp}\n") // Reference Signal Received Power
-                                stringBuilder.append("  RSRQ (dB): ${ssLte.rsrq}\n") // Reference Signal Received Quality
+                                stringBuilder.append("  RSRP (dBm): ${ssLte.rsrp}\n")
+                                stringBuilder.append("  RSRQ (dB): ${ssLte.rsrq}\n")
+                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityLte.mcc}-${cellIdentityLte.mnc}\n")
+                                stringBuilder.append("  TAC: ${cellIdentityLte.tac}\n")
+                                stringBuilder.append("  Cell ID (CI): ${cellIdentityLte.ci}\n")
+                                stringBuilder.append("  PCI: ${cellIdentityLte.pci}\n")
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
+                                    stringBuilder.append("  EARFCN: ${cellIdentityLte.earfcn}\n")
+                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { // API 28
+                                    stringBuilder.append("  Bandwidth: ${cellIdentityLte.bandwidth} kHz\n")
+                                }
+                                // Note: LTE band number is derived from EARFCN, not a direct property.
                             }
                             is CellInfoWcdma -> {
                                 val ssWcdma: CellSignalStrengthWcdma = cellInfo.cellSignalStrength
+                                val cellIdentityWcdma = cellInfo.cellIdentity
                                 stringBuilder.append("  Technology: WCDMA\n")
                                 stringBuilder.append("  Signal Strength (dBm): ${ssWcdma.dbm}\n")
+                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityWcdma.mcc}-${cellIdentityWcdma.mnc}\n")
+                                stringBuilder.append("  LAC: ${cellIdentityWcdma.lac}\n")
+                                stringBuilder.append("  Cell ID (CID): ${cellIdentityWcdma.cid}\n")
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
+                                    stringBuilder.append("  UARFCN: ${cellIdentityWcdma.uarfcn}\n")
+                                }
                             }
                             is CellInfoTdscdma -> {
                                 val ssTdscdma: CellSignalStrengthTdscdma = cellInfo.cellSignalStrength
+                                val cellIdentityTdscdma = cellInfo.cellIdentity
                                 stringBuilder.append("  Technology: TDSCDMA\n")
                                 stringBuilder.append("  Signal Strength (dBm): ${ssTdscdma.dbm}\n")
+//                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityTdscdma.mcc}-${cellIdentityTdscdma.mnc}\n")
+                                stringBuilder.append("  LAC: ${cellIdentityTdscdma.lac}\n")
+                                stringBuilder.append("  Cell ID (CID): ${cellIdentityTdscdma.cid}\n")
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
+                                    stringBuilder.append("  UARFCN: ${cellIdentityTdscdma.uarfcn}\n")
+                                }
                             }
                             is CellInfoNr -> { // 5G NR
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // API 29
                                     val ssNr = cellInfo.cellSignalStrength as? CellSignalStrengthNr
                                     val cellIdentityNr = cellInfo.cellIdentity as? android.telephony.CellIdentityNr // Safe cast for CellIdentityNr
 
                                     if (ssNr != null) {
                                         stringBuilder.append("  Technology: 5G NR\n")
                                         stringBuilder.append("  Signal Strength (dBm): ${ssNr.dbm}\n")
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { // API 30
                                             stringBuilder.append("  SS-RSRP (dBm): ${ssNr.ssRsrp}\n")
                                             stringBuilder.append("  SS-RSRQ (dB): ${ssNr.ssRsrq}\n")
                                             stringBuilder.append("  CSI-RSRP (dBm): ${ssNr.csiRsrp}\n")
                                             stringBuilder.append("  CSI-RSRQ (dB): ${ssNr.csiRsrq}\n")
 
-                                            // Access NCI and TAC only if cellIdentityNr is not null and API level is R+
                                             if (cellIdentityNr != null) {
-                                                stringBuilder.append("  NCI: ${cellIdentityNr.nci}\n") // NR Cell Identity
+                                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityNr.mccString ?: "N/A"}-${cellIdentityNr.mncString ?: "N/A"}\n")
+                                                stringBuilder.append("  NCI (Cell ID): ${cellIdentityNr.nci}\n") // NR Cell Identity
                                                 stringBuilder.append("  TAC: ${cellIdentityNr.tac}\n") // Tracking Area Code
+                                                stringBuilder.append("  NR-ARFCN: ${cellIdentityNr.nrarfcn}\n")
+                                                val bands = cellIdentityNr.bands
+                                                if (bands != null && bands.isNotEmpty()) {
+                                                    stringBuilder.append("  Bands: ${bands.joinToString(", ")}\n")
+                                                } else {
+                                                    stringBuilder.append("  Bands: N/A\n")
+                                                }
                                             } else {
-                                                stringBuilder.append("  NR Cell Identity details (NCI, TAC) not available or not CellIdentityNr type.\n")
+                                                stringBuilder.append("  NR Cell Identity details (PLMN-ID, NCI, TAC, NR-ARFCN, Bands) not available or not CellIdentityNr type.\n")
                                             }
                                         } else {
-                                            stringBuilder.append("  NR specific details (NCI, TAC, SS/CSI RSRP/RSRQ/SINR) require Android R (API 30+)\n")
+                                            stringBuilder.append("  NR specific details (PLMN-ID, NCI, TAC, NR-ARFCN, Bands, SS/CSI RSRP/RSRQ/SINR) require Android R (API 30+)\n")
                                         }
                                         // PCI is available from Q (API 29) on CellIdentityNr
                                         if (cellIdentityNr != null) {
@@ -367,7 +413,6 @@ class MainActivity : AppCompatActivity(), LocationListener {
                                             stringBuilder.append("  PCI not available or not CellIdentityNr type.\n")
                                         }
                                     } else {
-                                        // Fallback if the signal strength object isn't the specific NR type
                                         stringBuilder.append("  Technology: 5G NR (Signal strength details not available for this type)\n")
                                         Log.w("CellInfoExtractor", "CellInfoNr.cellSignalStrength was not CellSignalStrengthNr for a CellInfoNr instance.")
                                     }
