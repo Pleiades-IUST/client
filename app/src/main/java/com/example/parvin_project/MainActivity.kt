@@ -9,6 +9,8 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telephony.CellInfo
 import android.telephony.CellInfoCdma
 import android.telephony.CellInfoGsm
@@ -25,7 +27,6 @@ import android.telephony.CellSignalStrengthTdscdma
 import android.telephony.CellSignalStrengthWcdma
 import android.telephony.TelephonyManager
 import android.util.Log
-import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -37,7 +38,30 @@ class MainActivity : AppCompatActivity(), LocationListener {
     private lateinit var telephonyManager: TelephonyManager
     private lateinit var locationManager: LocationManager // Manages location services
     private lateinit var infoTextView: TextView // Displays cell and location info
-    private lateinit var getInfoButton: Button // Button to trigger data retrieval
+
+    // Handler to schedule periodic updates
+    private val handler = Handler(Looper.getMainLooper())
+    private val UPDATE_INTERVAL_MS = 3000L // 3 seconds in milliseconds for both cell and location
+
+    // Stores the last known location
+    private var lastKnownLocation: Location? = null
+
+    // Runnable to perform the updates
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            // Check permissions before attempting to get info, in case they were revoked
+            if (checkPermissionsWithoutRequest()) {
+                getCellInfo() // Get cellular network information
+                requestLocationUpdates() // Request location updates
+            } else {
+                // If permissions are somehow lost, clear info and log
+                infoTextView.text = "Permissions required to access cell and location information.\nPlease grant them in app settings."
+                Log.w("CellInfoExtractor", "Permissions missing during scheduled update.")
+            }
+            // Schedule the next update
+            handler.postDelayed(this, UPDATE_INTERVAL_MS)
+        }
+    }
 
     // Request code for runtime permissions
     private val PERMISSION_REQUEST_CODE = 101
@@ -49,29 +73,51 @@ class MainActivity : AppCompatActivity(), LocationListener {
 
         // Initialize UI elements by finding them by their IDs in the layout
         infoTextView = findViewById(R.id.infoTextView)
-        getInfoButton = findViewById(R.id.getInfoButton)
 
         // Get instances of system services
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    }
 
-        // Set an OnClickListener for the button
-        getInfoButton.setOnClickListener {
-            // Check for necessary permissions. If granted, proceed to get data.
-            if (checkAndRequestPermissions()) {
-                getCellInfo() // Get cellular network information
-                requestLocationUpdates() // Request location updates
-            }
+    override fun onResume() {
+        super.onResume()
+        // When the activity comes to the foreground, check permissions and start updates
+        if (checkAndRequestPermissions()) {
+            startUpdatingInfo()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // When the activity goes to the background, stop updates to save battery
+        stopUpdatingInfo()
+    }
+
+    /**
+     * Starts the periodic updates by posting the runnable.
+     */
+    private fun startUpdatingInfo() {
+        Log.d("CellInfoExtractor", "Starting periodic updates.")
+        // Post immediately, then every UPDATE_INTERVAL_MS
+        handler.post(updateRunnable)
+    }
+
+    /**
+     * Stops the periodic updates by removing callbacks from the handler.
+     */
+    private fun stopUpdatingInfo() {
+        Log.d("CellInfoExtractor", "Stopping periodic updates.")
+        handler.removeCallbacks(updateRunnable)
+        locationManager.removeUpdates(this) // Also remove any pending location updates
     }
 
     /**
      * Checks if the required permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, READ_PHONE_STATE)
      * are granted. If not, it requests them from the user.
+     * This version requests permissions if not granted.
      * @return true if all required permissions are already granted, false otherwise.
      */
     private fun checkAndRequestPermissions(): Boolean {
-        // Check the status of each required permission
         val fineLocationPermission = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -85,10 +131,8 @@ class MainActivity : AppCompatActivity(), LocationListener {
             Manifest.permission.READ_PHONE_STATE
         )
 
-        // Create a mutable list to hold permissions that need to be requested
         val permissionsToRequest = mutableListOf<String>()
 
-        // Add permissions to the list if they are not yet granted
         if (fineLocationPermission != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -99,7 +143,6 @@ class MainActivity : AppCompatActivity(), LocationListener {
             permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
         }
 
-        // If there are permissions to request, show the permission request dialog to the user
         if (permissionsToRequest.isNotEmpty()) {
             ActivityCompat.requestPermissions(
                 this,
@@ -109,6 +152,17 @@ class MainActivity : AppCompatActivity(), LocationListener {
             return false // Permissions were requested, not yet granted
         }
         return true // All permissions are already granted
+    }
+
+    /**
+     * Checks if permissions are granted WITHOUT requesting them.
+     * Used internally by the runnable to avoid re-prompting the user.
+     */
+    private fun checkPermissionsWithoutRequest(): Boolean {
+        val fineLocationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseLocationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val readPhoneStateGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        return (fineLocationGranted || coarseLocationGranted) && readPhoneStateGranted
     }
 
     /**
@@ -132,12 +186,11 @@ class MainActivity : AppCompatActivity(), LocationListener {
                 }
             }
             if (allPermissionsGranted) {
-                // If all permissions are granted, proceed to get and display cell and location information
-                getCellInfo()
-                requestLocationUpdates()
+                // If all permissions are granted, start the periodic updates
+                startUpdatingInfo()
             } else {
                 // If permissions are denied, update the TextView to inform the user
-                infoTextView.text = "Permissions required to access cell and location information."
+                infoTextView.text = "Permissions required to access cell and location information.\nPlease grant them in app settings."
                 Log.w("CellInfoExtractor", "Required permissions not granted.")
             }
         }
@@ -153,40 +206,31 @@ class MainActivity : AppCompatActivity(), LocationListener {
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
 
             try {
-                // Request updates from GPS provider if available, or Network provider
-                // We use a short interval (5 seconds, 10 meters) for demonstration.
-                // Adjust these values based on your actual needs for accuracy vs. battery.
-                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                // Determine the best available provider
+                val provider = when {
+                    locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+                    locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+                    else -> null
+                }
+
+                if (provider != null) {
+                    // Request updates every 3 seconds (UPDATE_INTERVAL_MS) and 10 meters
                     locationManager.requestLocationUpdates(
-                        LocationManager.GPS_PROVIDER,
-                        5000, // Minimum time interval between updates in milliseconds (5 seconds)
+                        provider,
+                        UPDATE_INTERVAL_MS, // Minimum time interval between updates in milliseconds (3 seconds)
                         10f,  // Minimum distance between updates in meters (10 meters)
                         this // The LocationListener instance (this Activity)
                     )
-                    Log.d("CellInfoExtractor", "Requesting GPS location updates.")
-                    infoTextView.append("\n\nAttempting to get location via GPS...")
-                } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                    locationManager.requestLocationUpdates(
-                        LocationManager.NETWORK_PROVIDER,
-                        5000, // Minimum time interval between updates in milliseconds (5 seconds)
-                        10f,  // Minimum distance between updates in meters (10 meters)
-                        this // The LocationListener instance (this Activity)
-                    )
-                    Log.d("CellInfoExtractor", "Requesting Network location updates.")
-                    infoTextView.append("\n\nAttempting to get location via Network...")
+                    Log.d("CellInfoExtractor", "Requesting location updates from $provider.")
                 } else {
-                    infoTextView.append("\n\nLocation: GPS/Network providers not enabled on device settings.")
                     Log.w("CellInfoExtractor", "GPS and Network location providers are disabled.")
                 }
             } catch (e: SecurityException) {
-                infoTextView.append("\n\nLocation permission denied: ${e.message}")
                 Log.e("CellInfoExtractor", "SecurityException requesting location updates: ${e.message}")
             } catch (e: Exception) {
-                infoTextView.append("\n\nError requesting location updates: ${e.message}")
                 Log.e("CellInfoExtractor", "Error requesting location updates: ${e.message}", e)
             }
         } else {
-            infoTextView.append("\n\nLocation permission not granted to get updates.")
             Log.w("CellInfoExtractor", "Location permissions not granted for updates.")
         }
     }
@@ -195,16 +239,10 @@ class MainActivity : AppCompatActivity(), LocationListener {
      * Callback for when the location has changed. This is where you get the Latitude and Longitude.
      */
     override fun onLocationChanged(location: Location) {
-        val lat = location.latitude
-        val long = location.longitude
-        // Append location info to the TextView
-        infoTextView.append("\n\n--- Current Location ---\n")
-        infoTextView.append("  Latitude: ${String.format("%.6f", lat)}\n") // Format for readability
-        infoTextView.append("  Longitude: ${String.format("%.6f", long)}\n") // Format for readability
-        // It's good practice to remove location updates after getting a satisfactory fix
-        // to save battery. If you need continuous updates, remove this line.
-        locationManager.removeUpdates(this)
-        Log.d("CellInfoExtractor", "Location updated: Lat=$lat, Long=$long. Updates removed.")
+        lastKnownLocation = location // Store the latest location
+        Log.d("CellInfoExtractor", "Location updated: Lat=${location.latitude}, Long=${location.longitude}")
+        // The UI update for location will happen when getCellInfo() is called by the runnable
+        // as it will now use lastKnownLocation.
     }
 
     // --- LocationListener Interface Methods (Required, can be empty if no specific logic needed) ---
@@ -216,21 +254,38 @@ class MainActivity : AppCompatActivity(), LocationListener {
     override fun onProviderEnabled(provider: String) {
         // Called when the provider is enabled by the user (e.g., GPS turned on)
         Log.d("CellInfoExtractor", "Location provider enabled: $provider")
+        // No need to re-request here, the runnable will handle it.
     }
 
     override fun onProviderDisabled(provider: String) {
         // Called when the provider is disabled by the user (e.g., GPS turned off)
         Log.d("CellInfoExtractor", "Location provider disabled: $provider")
-        infoTextView.append("\n\nLocation: $provider provider disabled. Please enable it in settings.")
+        // The UI will be updated by the runnable if permissions are missing or providers disabled.
     }
 
     /**
-     * Extracts and displays serving cell information, specifically its power (signal strength).
+     * Extracts and displays serving cell information, and also includes the last known location.
      */
     private fun getCellInfo() {
-        // Clear previous info (location will be appended later by onLocationChanged)
-        infoTextView.text = ""
         val stringBuilder = StringBuilder()
+
+        // Append Location Info First
+        stringBuilder.append("--- Current Location ---\n")
+        if (lastKnownLocation != null) {
+            stringBuilder.append("  Latitude: ${String.format("%.6f", lastKnownLocation!!.latitude)}\n")
+            stringBuilder.append("  Longitude: ${String.format("%.6f", lastKnownLocation!!.longitude)}\n")
+        } else {
+            stringBuilder.append("  Location: Waiting for GPS/Network fix or providers disabled.\n")
+            // Check if location providers are actually enabled
+            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
+                !locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                stringBuilder.append("  Please enable Location Services in device settings.\n")
+            }
+        }
+        stringBuilder.append("\n") // Separator
+
+        // Append Cell Info
+        stringBuilder.append("--- Serving Cell Power ---\n\n")
 
         try {
             val cellInfoList: List<CellInfo>? = telephonyManager.allCellInfo
@@ -239,8 +294,6 @@ class MainActivity : AppCompatActivity(), LocationListener {
                 stringBuilder.append("No cell information available or permissions not granted.\n")
                 Log.d("CellInfoExtractor", "No cell information available.")
             } else {
-                stringBuilder.append("--- Serving Cell Power ---\n\n")
-
                 var servingCellFound = false
                 for (cellInfo in cellInfoList) {
                     if (cellInfo.isRegistered) { // This is the serving cell
@@ -343,19 +396,4 @@ class MainActivity : AppCompatActivity(), LocationListener {
         }
         infoTextView.text = stringBuilder.toString()
     }
-
-    override fun onPause() {
-        super.onPause()
-        // It's good practice to remove location updates when the activity is paused
-        // to save battery, especially if you only need a single location fix.
-        locationManager.removeUpdates(this)
-        Log.d("CellInfoExtractor", "Location updates removed on pause.")
-    }
-
-    // onResume is not strictly needed here as we request on button click,
-    // but useful if you want continuous updates when the app is foreground.
-    // override fun onResume() {
-    //     super.onResume()
-    //     // requestLocationUpdates() // Uncomment if you want updates to resume when app comes to foreground
-    // }
 }
