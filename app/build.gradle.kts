@@ -2,8 +2,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    // ADD THIS LINE: Apply the Compose Compiler Gradle plugin
-    id("org.jetbrains.kotlin.plugin.compose") // Required for Kotlin 2.0+ with Compose
+    // REQUIRED FOR KOTLIN 2.0+ WITH COMPOSE
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -40,14 +40,13 @@ android {
         jvmTarget = "1.8"
     }
     buildFeatures {
-        compose = true // Set to true to enable Jetpack Compose
+        compose = true // Set to true to enable Jetpack Compose (even if only for theme files)
         viewBinding = false // Set to true if you plan to use View Binding
     }
     composeOptions {
         // Ensure this version is compatible with your Kotlin version and Compose BOM.
-        // For Kotlin 2.0, you might need a newer compiler extension version.
         // Check https://developer.android.com/jetpack/compose/bom/mapping
-        kotlinCompilerExtensionVersion = "1.5.1" // Example, adjust if needed for Kotlin 2.0
+        kotlinCompilerExtensionVersion = "1.5.1" // Example, adjust if needed for your Kotlin version
     }
     packaging {
         resources {
@@ -59,7 +58,7 @@ android {
 dependencies {
     // Core KTX and AppCompat libraries are essential for most Android apps
     implementation("androidx.core:core-ktx:1.13.1") // Or the latest stable version
-    implementation("androidx.appcompat:appcompat:1.6.1") // Or the latest stable version (e.g., 1.7.0-alpha03)
+    implementation("androidx.appcompat:appcompat:1.6.1") // Or the latest stable version
 
     // Material Design components for UI elements like Button, TextView
     implementation("com.google.android.material:material:1.12.0") // Or the latest stable version
@@ -73,7 +72,7 @@ dependencies {
     // Activity KTX for easier activity setup (often used with Compose, but good for general use)
     implementation("androidx.activity:activity-ktx:1.9.0") // Or the latest stable version
 
-    // Jetpack Compose dependencies (added to fix 'Unresolved reference 'compose' in Color.kt)
+    // Jetpack Compose dependencies (needed for your theme files, even if not using Compose UI directly)
     val composeBom = platform("androidx.compose:compose-bom:2023.08.00") // Use the latest stable BOM
     implementation(composeBom)
     androidTestImplementation(composeBom)

@@ -1,44 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center_horizontal"
     android:orientation="vertical"
     android:padding="16dp"
+    android:gravity="center_horizontal"
     tools:context=".MainActivity">
 
     <TextView
+        android:id="@+id/titleTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
-        android:textSize="30sp"
+        android:text="Serving Cell Power"
+        android:textSize="24sp"
         android:textStyle="bold"
-        android:layout_marginBottom="32dp" />
+        android:layout_marginBottom="24dp" />
 
     <Button
-        android:id="@+id/helloButton"
+        android:id="@+id/getInfoButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Say Hello"
-        android:textSize="20sp"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp"
-        android:paddingTop="12dp"
-        android:paddingBottom="12dp"
-        android:backgroundTint="#4CAF50"
-        android:textColor="#FFFFFF"
-        android:elevation="4dp"
-        android:translationZ="2dp"
-        android:layout_marginBottom="32dp" />
+        android:text="Get Serving Cell Power"
+        android:layout_marginBottom="24dp" />
 
-    <TextView
-        android:id="@+id/helloMessageTextView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="24sp"
-        android:textColor="#FF5722"
-        android:textStyle="italic" />
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TextView
+            android:id="@+id/infoTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Press the button to get serving cell power."
+            android:textSize="16sp"
+            android:fontFamily="monospace"
+            android:padding="8dp"
+            android:background="@android:color/darker_gray"
+            android:textColor="@android:color/white" />
+    </ScrollView>
 
 </LinearLayout>
