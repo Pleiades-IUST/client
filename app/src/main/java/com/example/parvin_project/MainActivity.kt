@@ -347,7 +347,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
                                     stringBuilder.append("  EARFCN: ${cellIdentityLte.earfcn}\n")
                                 }
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { // API 28
-                                    stringBuilder.append("  Bandwidth: ${cellIdentityLte.bandwidth} kHz\n")
+                                    stringBuilder.append("  Bandwidth: ${cellIdentityLte.bandwidth} Hz\n")
                                 }
                                 // Note: LTE band number is derived from EARFCN, not a direct property.
                             }
