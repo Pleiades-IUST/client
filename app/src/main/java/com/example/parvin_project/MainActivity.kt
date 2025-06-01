@@ -94,7 +94,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
 
         // Set initial button state (no driving, blue)
         toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
-        toggleButton.text = "No Driving" // Initial text
+        toggleButton.text = "start" // Initial text
 
         // Set a click listener for the toggle button
         toggleButton.setOnClickListener {
@@ -104,13 +104,13 @@ class MainActivity : AppCompatActivity(), LocationListener {
             if (isDriving) {
                 // Start driving/recording
                 toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.red_500))
-                toggleButton.text = "Driving (Recording)"
+                toggleButton.text = "stop (Recording)"
                 recordedDataList.clear() // Clear previous data when starting a new session
                 Log.d("ToggleButton", "Started recording. List cleared.")
             } else {
                 // Stop driving/recording
                 toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
-                toggleButton.text = "No Driving"
+                toggleButton.text = "start"
                 Log.d("ToggleButton", "Stopped recording. Printing data.")
                 displayRecordedData() // Display all recorded data
             }
