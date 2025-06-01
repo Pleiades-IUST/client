@@ -10,4 +10,6 @@
 
     <color name="blue_500">#2196F3</color>
     <color name="red_500">#F44336</color>
+
+    <color name="transparent_black_40">#66000000</color>
 </resources>
