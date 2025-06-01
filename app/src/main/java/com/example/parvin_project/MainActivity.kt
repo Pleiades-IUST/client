@@ -27,20 +27,23 @@ import android.telephony.CellSignalStrengthTdscdma
 import android.telephony.CellSignalStrengthWcdma
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.widget.Button // Import Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import java.text.SimpleDateFormat // Import for date formatting
-import java.util.Date // Import for Date object
-import java.util.Locale // Import for Locale
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // MainActivity now implements LocationListener to receive location updates
 class MainActivity : AppCompatActivity(), LocationListener {
 
+    private var isDriving: Boolean = false // State variable for recording
     private lateinit var telephonyManager: TelephonyManager
     private lateinit var locationManager: LocationManager // Manages location services
     private lateinit var infoTextView: TextView // Displays cell and location info
+    private lateinit var toggleButton: Button // Declare the toggle button
 
     // Handler to schedule periodic updates
     private val handler = Handler(Looper.getMainLooper())
@@ -49,13 +52,24 @@ class MainActivity : AppCompatActivity(), LocationListener {
     // Stores the last known location
     private var lastKnownLocation: Location? = null
 
+    // List to store recorded data
+    private val recordedDataList = mutableListOf<Map<String, Any?>>()
+
     // Runnable to perform the updates
     private val updateRunnable = object : Runnable {
         override fun run() {
             // Check permissions before attempting to get info, in case they were revoked
             if (checkPermissionsWithoutRequest()) {
-                getCellInfo() // Get cellular network information and update UI
-                requestLocationUpdates() // Request location updates
+                val (uiString, structuredData) = getCellAndLocationData() // Get both UI string and structured data
+
+                // Always update the UI with the latest info
+                infoTextView.text = uiString
+
+                // If isDriving is true, add structured data to the list
+                if (isDriving) {
+                    recordedDataList.add(structuredData)
+                    Log.d("CellInfoExtractor", "Recording data: ${structuredData["timestamp"]}")
+                }
             } else {
                 // If permissions are somehow lost, clear info and log
                 infoTextView.text = "Permissions required to access cell and location information.\nPlease grant them in app settings."
@@ -76,6 +90,31 @@ class MainActivity : AppCompatActivity(), LocationListener {
 
         // Initialize UI elements by finding them by their IDs in the layout
         infoTextView = findViewById(R.id.infoTextView)
+        toggleButton = findViewById(R.id.toggleButton) // Initialize the toggle button
+
+        // Set initial button state (no driving, blue)
+        toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
+        toggleButton.text = "No Driving" // Initial text
+
+        // Set a click listener for the toggle button
+        toggleButton.setOnClickListener {
+            // Toggle the isDriving state
+            isDriving = !isDriving
+
+            if (isDriving) {
+                // Start driving/recording
+                toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.red_500))
+                toggleButton.text = "Driving (Recording)"
+                recordedDataList.clear() // Clear previous data when starting a new session
+                Log.d("ToggleButton", "Started recording. List cleared.")
+            } else {
+                // Stop driving/recording
+                toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
+                toggleButton.text = "No Driving"
+                Log.d("ToggleButton", "Stopped recording. Printing data.")
+                displayRecordedData() // Display all recorded data
+            }
+        }
 
         // Get instances of system services
         telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
@@ -267,112 +306,182 @@ class MainActivity : AppCompatActivity(), LocationListener {
     }
 
     /**
-     * Extracts and displays serving cell information, and also includes the last known location.
+     * Helper function to get PLMN-ID string, handling unavailable integer values.
      */
-    private fun getCellInfo() {
-        val stringBuilder = StringBuilder()
+    private fun getPlmnId(mcc: Int, mnc: Int): String {
+        val mccStr = if (mcc != Int.MAX_VALUE) mcc.toString() else "N/A"
+        val mncStr = if (mnc != Int.MAX_VALUE) mnc.toString() else "N/A"
+        return "$mccStr-$mncStr"
+    }
+
+    /**
+     * Extracts and returns serving cell information and location data as a Pair:
+     * first element is the formatted string for UI, second is Map<String, Any?> for structured data.
+     */
+    private fun getCellAndLocationData(): Pair<String, Map<String, Any?>> {
+        val uiStringBuilder = StringBuilder()
+        val structuredDataMap = mutableMapOf<String, Any?>()
 
         // Get current time and format it
         val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-        stringBuilder.append("--- Last Updated: $currentTime ---\n\n")
+        uiStringBuilder.append("--- Last Updated: $currentTime ---\n\n")
+        structuredDataMap["timestamp"] = currentTime
 
-        // Append Location Info First
-        stringBuilder.append("--- Current Location ---\n")
+        // Append Location Info
+        uiStringBuilder.append("--- Current Location ---\n")
+        val locationData = mutableMapOf<String, Any?>()
         if (lastKnownLocation != null) {
-            stringBuilder.append("  Latitude: ${String.format("%.6f", lastKnownLocation!!.latitude)}\n")
-            stringBuilder.append("  Longitude: ${String.format("%.6f", lastKnownLocation!!.longitude)}\n")
+            val lat = String.format("%.6f", lastKnownLocation!!.latitude).toDouble()
+            val long = String.format("%.6f", lastKnownLocation!!.longitude).toDouble()
+            uiStringBuilder.append("  Latitude: $lat\n")
+            uiStringBuilder.append("  Longitude: $long\n")
+            locationData["latitude"] = lat
+            locationData["longitude"] = long
+            locationData["status"] = "Fixed"
         } else {
-            stringBuilder.append("  Location: Waiting for GPS/Network fix or providers disabled.\n")
-            // Check if location providers are actually enabled
-            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
+            uiStringBuilder.append("  Location: Waiting for GPS/Network fix or providers disabled.\n")
+            val status = if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) &&
                 !locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                stringBuilder.append("  Please enable Location Services in device settings.\n")
+                "GPS/Network providers not enabled on device settings. Please enable Location Services."
+            } else {
+                "Waiting for GPS/Network fix."
             }
+            uiStringBuilder.append("  $status\n")
+            locationData["latitude"] = null
+            locationData["longitude"] = null
+            locationData["status"] = status
         }
-        stringBuilder.append("\n") // Separator
+        structuredDataMap["location"] = locationData
+        uiStringBuilder.append("\n") // Separator
 
         // Append Cell Info
-        stringBuilder.append("--- Serving Cell Power & IDs ---\n\n")
+        uiStringBuilder.append("--- Serving Cell Power & IDs ---\n\n")
+        val cellData = mutableMapOf<String, Any?>()
 
         try {
             val cellInfoList: List<CellInfo>? = telephonyManager.allCellInfo
 
             if (cellInfoList.isNullOrEmpty()) {
-                stringBuilder.append("No cell information available or permissions not granted.\n")
-                Log.d("CellInfoExtractor", "No cell information available.")
+                uiStringBuilder.append("No cell information available or permissions not granted.\n")
+                cellData["status"] = "No cell information available or permissions not granted."
             } else {
                 var servingCellFound = false
                 for (cellInfo in cellInfoList) {
                     if (cellInfo.isRegistered) { // This is the serving cell
                         servingCellFound = true
-                        stringBuilder.append("Serving Cell Details:\n")
+                        uiStringBuilder.append("Serving Cell Details:\n")
 
                         // Extract technology-specific signal strength and IDs
                         when (cellInfo) {
                             is CellInfoGsm -> {
                                 val ssGsm: CellSignalStrengthGsm = cellInfo.cellSignalStrength
                                 val cellIdentityGsm = cellInfo.cellIdentity
-                                stringBuilder.append("  Technology: GSM\n")
-                                stringBuilder.append("  Signal Strength (dBm): ${ssGsm.dbm}\n")
-                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityGsm.mcc}-${cellIdentityGsm.mnc}\n")
-                                stringBuilder.append("  LAC: ${cellIdentityGsm.lac}\n")
-                                stringBuilder.append("  Cell ID (CID): ${cellIdentityGsm.cid}\n")
+                                uiStringBuilder.append("  Technology: GSM\n")
+                                uiStringBuilder.append("  Signal Strength (dBm): ${ssGsm.dbm}\n")
+                                uiStringBuilder.append("  PLMN-ID (MCC-MNC): ${getPlmnId(cellIdentityGsm.mcc, cellIdentityGsm.mnc)}\n")
+                                uiStringBuilder.append("  LAC: ${cellIdentityGsm.lac}\n")
+                                uiStringBuilder.append("  Cell ID (CID): ${cellIdentityGsm.cid}\n")
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
-                                    stringBuilder.append("  ARFCN: ${cellIdentityGsm.arfcn}\n")
+                                    uiStringBuilder.append("  ARFCN: ${cellIdentityGsm.arfcn}\n")
                                 }
-                                // RAC is less common for GSM and often not directly available or relevant in newer APIs
+
+                                cellData["technology"] = "GSM"
+                                cellData["signalStrength_dBm"] = ssGsm.dbm
+                                cellData["plmnId"] = getPlmnId(cellIdentityGsm.mcc, cellIdentityGsm.mnc)
+                                cellData["lac"] = cellIdentityGsm.lac
+                                cellData["cellId"] = cellIdentityGsm.cid
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    cellData["arfcn"] = cellIdentityGsm.arfcn
+                                }
                             }
                             is CellInfoCdma -> {
                                 val ssCdma: CellSignalStrengthCdma = cellInfo.cellSignalStrength
                                 val cellIdentityCdma = cellInfo.cellIdentity
-                                stringBuilder.append("  Technology: CDMA\n")
-                                stringBuilder.append("  Signal Strength (dBm): ${ssCdma.dbm}\n")
-                                stringBuilder.append("  Network ID: ${cellIdentityCdma.networkId}\n")
-                                stringBuilder.append("  System ID: ${cellIdentityCdma.systemId}\n")
-                                stringBuilder.append("  Base Station ID (Cell ID): ${cellIdentityCdma.basestationId}\n")
-                                // PLMN-ID, LAC, RAC, TAC, ARFCN/Band are not directly applicable to CDMA in the same way
+                                uiStringBuilder.append("  Technology: CDMA\n")
+                                uiStringBuilder.append("  Signal Strength (dBm): ${ssCdma.dbm}\n")
+                                uiStringBuilder.append("  Network ID: ${cellIdentityCdma.networkId}\n")
+                                uiStringBuilder.append("  System ID: ${cellIdentityCdma.systemId}\n")
+                                uiStringBuilder.append("  Base Station ID (Cell ID): ${cellIdentityCdma.basestationId}\n")
+
+                                cellData["technology"] = "CDMA"
+                                cellData["signalStrength_dBm"] = ssCdma.dbm
+                                cellData["networkId"] = cellIdentityCdma.networkId
+                                cellData["systemId"] = cellIdentityCdma.systemId
+                                cellData["cellId"] = cellIdentityCdma.basestationId
                             }
                             is CellInfoLte -> {
                                 val ssLte: CellSignalStrengthLte = cellInfo.cellSignalStrength
                                 val cellIdentityLte = cellInfo.cellIdentity
-                                stringBuilder.append("  Technology: LTE\n")
-                                stringBuilder.append("  Signal Strength (dBm): ${ssLte.dbm}\n")
-                                stringBuilder.append("  RSRP (dBm): ${ssLte.rsrp}\n")
-                                stringBuilder.append("  RSRQ (dB): ${ssLte.rsrq}\n")
-                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityLte.mcc}-${cellIdentityLte.mnc}\n")
-                                stringBuilder.append("  TAC: ${cellIdentityLte.tac}\n")
-                                stringBuilder.append("  Cell ID (CI): ${cellIdentityLte.ci}\n")
-                                stringBuilder.append("  PCI: ${cellIdentityLte.pci}\n")
+                                uiStringBuilder.append("  Technology: LTE\n")
+                                uiStringBuilder.append("  Signal Strength (dBm): ${ssLte.dbm}\n")
+                                uiStringBuilder.append("  RSRP (dBm): ${ssLte.rsrp}\n")
+                                uiStringBuilder.append("  RSRQ (dB): ${ssLte.rsrq}\n")
+                                uiStringBuilder.append("  PLMN-ID (MCC-MNC): ${getPlmnId(cellIdentityLte.mcc, cellIdentityLte.mnc)}\n")
+                                uiStringBuilder.append("  TAC: ${cellIdentityLte.tac}\n")
+                                uiStringBuilder.append("  Cell ID (CI): ${cellIdentityLte.ci}\n")
+                                uiStringBuilder.append("  PCI: ${cellIdentityLte.pci}\n")
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
-                                    stringBuilder.append("  EARFCN: ${cellIdentityLte.earfcn}\n")
+                                    uiStringBuilder.append("  EARFCN: ${cellIdentityLte.earfcn}\n")
                                 }
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { // API 28
-                                    stringBuilder.append("  Bandwidth: ${cellIdentityLte.bandwidth} Hz\n")
+                                    uiStringBuilder.append("  Bandwidth: ${cellIdentityLte.bandwidth} kHz\n")
                                 }
-                                // Note: LTE band number is derived from EARFCN, not a direct property.
+
+                                cellData["technology"] = "LTE"
+                                cellData["signalStrength_dBm"] = ssLte.dbm
+                                cellData["rsrp_dBm"] = ssLte.rsrp
+                                cellData["rsrq_dB"] = ssLte.rsrq
+                                cellData["plmnId"] = getPlmnId(cellIdentityLte.mcc, cellIdentityLte.mnc)
+                                cellData["tac"] = cellIdentityLte.tac
+                                cellData["cellId"] = cellIdentityLte.ci
+                                cellData["pci"] = cellIdentityLte.pci
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    cellData["earfcn"] = cellIdentityLte.earfcn
+                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                    cellData["bandwidth_kHz"] = cellIdentityLte.bandwidth
+                                }
                             }
                             is CellInfoWcdma -> {
                                 val ssWcdma: CellSignalStrengthWcdma = cellInfo.cellSignalStrength
                                 val cellIdentityWcdma = cellInfo.cellIdentity
-                                stringBuilder.append("  Technology: WCDMA\n")
-                                stringBuilder.append("  Signal Strength (dBm): ${ssWcdma.dbm}\n")
-                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityWcdma.mcc}-${cellIdentityWcdma.mnc}\n")
-                                stringBuilder.append("  LAC: ${cellIdentityWcdma.lac}\n")
-                                stringBuilder.append("  Cell ID (CID): ${cellIdentityWcdma.cid}\n")
+                                uiStringBuilder.append("  Technology: WCDMA\n")
+                                uiStringBuilder.append("  Signal Strength (dBm): ${ssWcdma.dbm}\n")
+                                uiStringBuilder.append("  PLMN-ID (MCC-MNC): ${getPlmnId(cellIdentityWcdma.mcc, cellIdentityWcdma.mnc)}\n")
+                                uiStringBuilder.append("  LAC: ${cellIdentityWcdma.lac}\n")
+                                uiStringBuilder.append("  Cell ID (CID): ${cellIdentityWcdma.cid}\n")
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
-                                    stringBuilder.append("  UARFCN: ${cellIdentityWcdma.uarfcn}\n")
+                                    uiStringBuilder.append("  UARFCN: ${cellIdentityWcdma.uarfcn}\n")
+                                }
+
+                                cellData["technology"] = "WCDMA"
+                                cellData["signalStrength_dBm"] = ssWcdma.dbm
+                                cellData["plmnId"] = getPlmnId(cellIdentityWcdma.mcc, cellIdentityWcdma.mnc)
+                                cellData["lac"] = cellIdentityWcdma.lac
+                                cellData["cellId"] = cellIdentityWcdma.cid
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    cellData["uarfcn"] = cellIdentityWcdma.uarfcn
                                 }
                             }
                             is CellInfoTdscdma -> {
                                 val ssTdscdma: CellSignalStrengthTdscdma = cellInfo.cellSignalStrength
                                 val cellIdentityTdscdma = cellInfo.cellIdentity
-                                stringBuilder.append("  Technology: TDSCDMA\n")
-                                stringBuilder.append("  Signal Strength (dBm): ${ssTdscdma.dbm}\n")
-//                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityTdscdma.mcc}-${cellIdentityTdscdma.mnc}\n")
-                                stringBuilder.append("  LAC: ${cellIdentityTdscdma.lac}\n")
-                                stringBuilder.append("  Cell ID (CID): ${cellIdentityTdscdma.cid}\n")
+                                uiStringBuilder.append("  Technology: TDSCDMA\n")
+                                uiStringBuilder.append("  Signal Strength (dBm): ${ssTdscdma.dbm}\n")
+//                                uiStringBuilder.append("  PLMN-ID (MCC-MNC): ${getPlmnId(cellIdentityTdscdma.mcc, cellIdentityTdscdma.mnc)}\n")
+                                uiStringBuilder.append("  LAC: ${cellIdentityTdscdma.lac}\n")
+                                uiStringBuilder.append("  Cell ID (CID): ${cellIdentityTdscdma.cid}\n")
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) { // API 24
-                                    stringBuilder.append("  UARFCN: ${cellIdentityTdscdma.uarfcn}\n")
+                                    uiStringBuilder.append("  UARFCN: ${cellIdentityTdscdma.uarfcn}\n")
+                                }
+
+                                cellData["technology"] = "TDSCDMA"
+                                cellData["signalStrength_dBm"] = ssTdscdma.dbm
+//                                cellData["plmnId"] = getPlmnId(cellIdentityTdscdma.mcc, cellIdentityTdscdma.mnc)
+                                cellData["lac"] = cellIdentityTdscdma.lac
+                                cellData["cellId"] = cellIdentityTdscdma.cid
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    cellData["uarfcn"] = cellIdentityTdscdma.uarfcn
                                 }
                             }
                             is CellInfoNr -> { // 5G NR
@@ -381,54 +490,77 @@ class MainActivity : AppCompatActivity(), LocationListener {
                                     val cellIdentityNr = cellInfo.cellIdentity as? android.telephony.CellIdentityNr // Safe cast for CellIdentityNr
 
                                     if (ssNr != null) {
-                                        stringBuilder.append("  Technology: 5G NR\n")
-                                        stringBuilder.append("  Signal Strength (dBm): ${ssNr.dbm}\n")
+                                        uiStringBuilder.append("  Technology: 5G NR\n")
+                                        uiStringBuilder.append("  Signal Strength (dBm): ${ssNr.dbm}\n")
+                                        cellData["technology"] = "5G NR"
+                                        cellData["signalStrength_dBm"] = ssNr.dbm
+
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) { // API 30
-                                            stringBuilder.append("  SS-RSRP (dBm): ${ssNr.ssRsrp}\n")
-                                            stringBuilder.append("  SS-RSRQ (dB): ${ssNr.ssRsrq}\n")
-                                            stringBuilder.append("  CSI-RSRP (dBm): ${ssNr.csiRsrp}\n")
-                                            stringBuilder.append("  CSI-RSRQ (dB): ${ssNr.csiRsrq}\n")
+                                            uiStringBuilder.append("  SS-RSRP (dBm): ${ssNr.ssRsrp}\n")
+                                            uiStringBuilder.append("  SS-RSRQ (dB): ${ssNr.ssRsrq}\n")
+                                            uiStringBuilder.append("  CSI-RSRP (dBm): ${ssNr.csiRsrp}\n")
+                                            uiStringBuilder.append("  CSI-RSRQ (dB): ${ssNr.csiRsrq}\n")
+
+                                            cellData["ssRsrp_dBm"] = ssNr.ssRsrp
+                                            cellData["ssRsrq_dB"] = ssNr.ssRsrq
+                                            cellData["csiRsrp_dBm"] = ssNr.csiRsrp
+                                            cellData["csiRsrq_dB"] = ssNr.csiRsrq
 
                                             if (cellIdentityNr != null) {
-                                                stringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityNr.mccString ?: "N/A"}-${cellIdentityNr.mncString ?: "N/A"}\n")
-                                                stringBuilder.append("  NCI (Cell ID): ${cellIdentityNr.nci}\n") // NR Cell Identity
-                                                stringBuilder.append("  TAC: ${cellIdentityNr.tac}\n") // Tracking Area Code
-                                                stringBuilder.append("  NR-ARFCN: ${cellIdentityNr.nrarfcn}\n")
+                                                uiStringBuilder.append("  PLMN-ID (MCC-MNC): ${cellIdentityNr.mccString ?: "N/A"}-${cellIdentityNr.mncString ?: "N/A"}\n")
+                                                uiStringBuilder.append("  NCI (Cell ID): ${cellIdentityNr.nci}\n") // NR Cell Identity
+                                                uiStringBuilder.append("  TAC: ${cellIdentityNr.tac}\n") // Tracking Area Code
+                                                uiStringBuilder.append("  NR-ARFCN: ${cellIdentityNr.nrarfcn}\n")
                                                 val bands = cellIdentityNr.bands
                                                 if (bands != null && bands.isNotEmpty()) {
-                                                    stringBuilder.append("  Bands: ${bands.joinToString(", ")}\n")
+                                                    uiStringBuilder.append("  Bands: ${bands.joinToString(", ")}\n")
                                                 } else {
-                                                    stringBuilder.append("  Bands: N/A\n")
+                                                    uiStringBuilder.append("  Bands: N/A\n")
                                                 }
+
+                                                cellData["plmnId"] = "${cellIdentityNr.mccString ?: "N/A"}-${cellIdentityNr.mncString ?: "N/A"}"
+                                                cellData["cellId"] = cellIdentityNr.nci
+                                                cellData["tac"] = cellIdentityNr.tac
+                                                cellData["nrarfcn"] = cellIdentityNr.nrarfcn
+                                                cellData["bands"] = bands?.toList() // Convert to List for JSON
                                             } else {
-                                                stringBuilder.append("  NR Cell Identity details (PLMN-ID, NCI, TAC, NR-ARFCN, Bands) not available or not CellIdentityNr type.\n")
+                                                uiStringBuilder.append("  NR Cell Identity details (PLMN-ID, NCI, TAC, NR-ARFCN, Bands) not available or not CellIdentityNr type.\n")
+                                                cellData["identityDetails"] = "Not available or not CellIdentityNr type."
                                             }
                                         } else {
-                                            stringBuilder.append("  NR specific details (PLMN-ID, NCI, TAC, NR-ARFCN, Bands, SS/CSI RSRP/RSRQ/SINR) require Android R (API 30+)\n")
+                                            uiStringBuilder.append("  NR specific details (PLMN-ID, NCI, TAC, NR-ARFCN, Bands, SS/CSI RSRP/RSRQ/SINR) require Android R (API 30+)\n")
+                                            cellData["details_api_level"] = "Requires Android R (API 30+)"
                                         }
                                         // PCI is available from Q (API 29) on CellIdentityNr
                                         if (cellIdentityNr != null) {
-                                            stringBuilder.append("  PCI: ${cellIdentityNr.pci}\n") // Physical Cell ID
+                                            uiStringBuilder.append("  PCI: ${cellIdentityNr.pci}\n") // Physical Cell ID
+                                            cellData["pci"] = cellIdentityNr.pci
                                         } else {
-                                            stringBuilder.append("  PCI not available or not CellIdentityNr type.\n")
+                                            uiStringBuilder.append("  PCI not available or not CellIdentityNr type.\n")
                                         }
                                     } else {
-                                        stringBuilder.append("  Technology: 5G NR (Signal strength details not available for this type)\n")
+                                        uiStringBuilder.append("  Technology: 5G NR (Signal strength details not available for this type)\n")
                                         Log.w("CellInfoExtractor", "CellInfoNr.cellSignalStrength was not CellSignalStrengthNr for a CellInfoNr instance.")
+                                        cellData["status"] = "Signal strength details not available for this type."
                                     }
                                 } else {
-                                    stringBuilder.append("  Technology: 5G NR (requires Android Q+)\n")
+                                    uiStringBuilder.append("  Technology: 5G NR (requires Android Q+)\n")
+                                    cellData["status"] = "Requires Android Q+ (API 29+)"
                                 }
                             }
                             else -> {
-                                stringBuilder.append("  Technology: Unknown or unsupported type\n")
-                                stringBuilder.append("  CellInfo type: ${cellInfo.javaClass.simpleName}\n")
+                                uiStringBuilder.append("  Technology: Unknown or unsupported type\n")
+                                uiStringBuilder.append("  CellInfo type: ${cellInfo.javaClass.simpleName}\n")
+                                cellData["technology"] = "Unknown"
+                                cellData["cellInfoType"] = cellInfo.javaClass.simpleName
                                 try {
                                     val signalStrengthMethod = CellInfo::class.java.getMethod("getCellSignalStrength")
                                     val genericSignalStrength = signalStrengthMethod.invoke(cellInfo) as CellSignalStrength
-                                    stringBuilder.append("  Generic Signal Strength (dBm): ${genericSignalStrength.dbm}\n")
+                                    uiStringBuilder.append("  Generic Signal Strength (dBm): ${genericSignalStrength.dbm}\n")
+                                    cellData["signalStrength_dBm"] = genericSignalStrength.dbm
                                 } catch (e: Exception) {
                                     Log.e("CellInfoExtractor", "Could not get generic signal strength: ${e.message}")
+                                    cellData["signalStrength_error"] = e.message
                                 }
                             }
                         }
@@ -436,16 +568,69 @@ class MainActivity : AppCompatActivity(), LocationListener {
                     }
                 }
                 if (!servingCellFound) {
-                    stringBuilder.append("No serving cell found.\n")
+                    uiStringBuilder.append("No serving cell found.\n")
+                    cellData["status"] = "No serving cell found."
                 }
             }
         } catch (e: SecurityException) {
-            stringBuilder.append("Permission denied: ${e.message}\n")
+            uiStringBuilder.append("Permission denied: ${e.message}\n")
             Log.e("CellInfoExtractor", "SecurityException: ${e.message}")
+            cellData["error"] = "Permission denied: ${e.message}"
         } catch (e: Exception) {
-            stringBuilder.append("Error getting cell info: ${e.message}\n")
+            uiStringBuilder.append("Error getting cell info: ${e.message}\n")
             Log.e("CellInfoExtractor", "Error: ${e.message}", e)
+            cellData["error"] = "Error getting cell info: ${e.message}"
         }
-        infoTextView.text = stringBuilder.toString()
+        structuredDataMap["servingCell"] = cellData
+        return Pair(uiStringBuilder.toString(), structuredDataMap)
+    }
+
+    /**
+     * Displays all recorded data in the infoTextView.
+     */
+    private fun displayRecordedData() {
+        val displayBuilder = StringBuilder()
+        if (recordedDataList.isEmpty()) {
+            displayBuilder.append("No data was recorded during the session.\n")
+        } else {
+            displayBuilder.append("--- Recorded Data Session ---\n\n")
+            recordedDataList.forEachIndexed { index, dataMap ->
+                displayBuilder.append("--- Record ${index + 1} (${dataMap["timestamp"]}) ---\n")
+
+                // Location data
+                val location = dataMap["location"] as? Map<*, *>
+                if (location != null) {
+                    displayBuilder.append("  Location:\n")
+                    displayBuilder.append("    Latitude: ${location["latitude"] ?: "N/A"}\n")
+                    displayBuilder.append("    Longitude: ${location["longitude"] ?: "N/A"}\n")
+                    displayBuilder.append("    Status: ${location["status"] ?: "N/A"}\n")
+                }
+
+                // Cell data
+                val cell = dataMap["servingCell"] as? Map<*, *>
+                if (cell != null) {
+                    displayBuilder.append("  Serving Cell:\n")
+                    displayBuilder.append("    Technology: ${cell["technology"] ?: "N/A"}\n")
+                    displayBuilder.append("    Signal Strength (dBm): ${cell["signalStrength_dBm"] ?: "N/A"}\n")
+                    displayBuilder.append("    PLMN-ID: ${cell["plmnId"] ?: "N/A"}\n")
+                    cell["lac"]?.let { displayBuilder.append("    LAC: $it\n") }
+                    cell["tac"]?.let { displayBuilder.append("    TAC: $it\n") }
+                    cell["cellId"]?.let { displayBuilder.append("    Cell ID: $it\n") }
+                    cell["pci"]?.let { displayBuilder.append("    PCI: $it\n") }
+                    cell["arfcn"]?.let { displayBuilder.append("    ARFCN: $it\n") }
+                    cell["earfcn"]?.let { displayBuilder.append("    EARFCN: $it\n") }
+                    cell["uarfcn"]?.let { displayBuilder.append("    UARFCN: $it\n") }
+                    cell["nrarfcn"]?.let { displayBuilder.append("    NR-ARFCN: $it\n") }
+                    cell["bandwidth_kHz"]?.let { displayBuilder.append("    Bandwidth (kHz): $it\n") }
+                    (cell["bands"] as? List<*>)?.let { bands ->
+                        if (bands.isNotEmpty()) {
+                            displayBuilder.append("    Bands: ${bands.joinToString(", ")}\n")
+                        }
+                    }
+                }
+                displayBuilder.append("\n")
+            }
+        }
+        infoTextView.text = displayBuilder.toString()
     }
 }

@@ -43,6 +43,18 @@
         android:adjustViewBounds="true"
         android:scaleType="fitCenter"
         android:src="@drawable/parvin"
-        android:contentDescription="A beautiful image of Parvin" />
-
-</LinearLayout>
+        android:contentDescription="A beautiful image of Parvin"
+        android:layout_marginBottom="16dp"/> <Button
+        android:id="@+id/toggleButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="no driving"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:textSize="18sp"
+        android:textColor="@android:color/white"
+        android:backgroundTint="@color/blue_500" android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
+        app:cornerRadius="8dp" /> </LinearLayout>
