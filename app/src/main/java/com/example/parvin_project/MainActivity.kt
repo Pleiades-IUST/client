@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity() {
 
     // Handlers for periodic updates and location
     private val handler = Handler(Looper.getMainLooper())
-    private val UPDATE_INTERVAL_MS = 5000L // 5 seconds in milliseconds for each entry
+    private val UPDATE_INTERVAL_MS = 10000L // 5 seconds in milliseconds for each entry
 
     // New instances of our helper classes
     private lateinit var permissionHandler: PermissionHandler

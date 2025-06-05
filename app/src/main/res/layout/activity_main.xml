@@ -24,7 +24,7 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="8dp"
         android:elevation="4dp"
         android:background="@drawable/rounded_log_background"
         android:padding="8dp">
@@ -41,9 +41,9 @@
 
     <ImageView
         android:id="@+id/myImageView"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:layout_marginBottom="16dp"
+        android:layout_width="80dp"
+        android:layout_height="80dp"
+        android:layout_marginBottom="8dp"
         android:adjustViewBounds="true"
         android:contentDescription="A beautiful image of Parvin"
         android:scaleType="fitCenter"
@@ -55,7 +55,7 @@
         android:layout_height="wrap_content"
         android:text="Capture Download Rate"
         android:checked="true"
-        android:layout_marginBottom="8dp"
+        android:layout_marginBottom="4dp"
         android:textSize="16sp" />
 
     <CheckBox
@@ -64,7 +64,7 @@
         android:layout_height="wrap_content"
         android:text="Capture Ping Test"
         android:checked="true"
-        android:layout_marginBottom="8dp"
+        android:layout_marginBottom="4dp"
         android:textSize="16sp" />
 
     <CheckBox
@@ -73,7 +73,7 @@
         android:layout_height="wrap_content"
         android:text="Capture SMS Test (Every 10 Entries)"
         android:checked="true"
-        android:layout_marginBottom="8dp"
+        android:layout_marginBottom="4dp"
         android:textSize="16sp" />
 
     <CheckBox
@@ -82,7 +82,7 @@
         android:layout_height="wrap_content"
         android:text="Capture DNS Test"
         android:checked="true"
-        android:layout_marginBottom="16dp"
+        android:layout_marginBottom="8dp"
         android:textSize="16sp" />
 
     <Button
@@ -97,7 +97,7 @@
         android:textSize="18sp"
         android:textColor="@android:color/white"
         android:backgroundTint="@color/blue_500"
-        android:layout_marginTop="16dp"
+        android:layout_marginTop="8dp"
         android:layout_marginBottom="16dp"
         app:cornerRadius="8dp" />
 
