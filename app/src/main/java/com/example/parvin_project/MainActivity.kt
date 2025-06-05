@@ -23,36 +23,40 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Assuming LocationData and CellInfoData are defined elsewhere as data classes
-// Example:
+// IMPORTANT: Ensure these data classes are defined in a file like `data_classes.kt`
 /*
 data class LocationData(
     val latitude: Double?,
     val longitude: Double?,
-    val status: String
+    val status: String // e.g., "OK", "Waiting for fix", "Providers disabled"
 )
 
 data class CellInfoData(
-    val technology: String?,
-    val signalStrength_dBm: Int?,
-    val plmnId: String?,
-    val lac: Int?,
-    val cellId: Int?,
-    val pci: Int?,
-    val tac: Int?,
-    val nci: Long?, // For 5G NR
-    val nrarfcn: Int?, // For 5G NR
-    val bands: List<Int>?, // For 5G NR
-    val rsrp_dBm: Int?, // For LTE, NR
-    val rsrq_dB: Int?, // For LTE, NR
-    val csiRsrp_dBm: Int?, // For NR
-    val csiRsrq_dB: Int?, // For NR
-    val status: String // "OK", "Permissions Denied", etc.
+    val technology: String?, // e.g., "LTE", "NR", "GSM"
+    val signalStrength_dBm: Int?, // General signal strength in dBm
+    val plmnId: String?, // Public Land Mobile Network ID (MCC+MNC)
+    val lac: Int?, // Location Area Code (for 2G/3G)
+    val cellId: Long?, // Cell Identity (for 2G/3G/4G/5G NR - using Long for NCI)
+    val pci: Int?, // Physical Cell Identity (for 4G/5G)
+    val tac: Int?, // Tracking Area Code (for 4G)
+    val nci: Long?, // NR Cell Identity (for 5G NR)
+    val nrarfcn: Int?, // NR Absolute Radio Frequency Channel Number (for 5G NR)
+    val bands: List<Int>?, // List of frequency bands (for 5G NR, LTE)
+    val csiRsrp_dBm: Int?, // CSI Reference Signal Received Power (for 5G NR)
+    val csiRsrq_dB: Int?, // CSI Reference Signal Received Quality (for 5G NR)
+    val rsrp_dBm: Int?, // Reference Signal Received Power (for LTE)
+    val rsrq_dB: Int?, // Reference Signal Received Quality (for LTE)
+    val status: String // e.g., "OK", "Permissions Denied", "No Cell Info"
 )
 */
-// And a hypothetical Utils.kt for capitalizeWords extension function if not inlined.
-// If capitalizeWords() is not defined as an extension function and gives an error,
-// you might need to add it manually to your Utils.kt or directly inline the logic.
+
+// IMPORTANT: Ensure this extension function is defined in a file like `Utils.kt`
+/*
+import java.util.Locale
+fun String.capitalizeWords(): String = split(" ").joinToString(" ") { word ->
+    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+}
+*/
 
 class MainActivity : AppCompatActivity() {
 
@@ -64,16 +68,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var capturePingTestCheckBox: CheckBox // Declare the ping checkbox
     private lateinit var captureSmsTestCheckBox: CheckBox // Declare the SMS checkbox
     private lateinit var captureDnsTestCheckBox: CheckBox // Declare the DNS checkbox
+    private lateinit var captureUploadRateCheckBox: CheckBox // Declare the Upload checkbox
 
-    // States for whether to capture download/ping/SMS/DNS rates
+    // States for whether to capture download/ping/SMS/DNS/Upload rates
     private var shouldCaptureDownloadRate: Boolean = true // Default to true
     private var shouldCapturePingTest: Boolean = true    // Default to true for ping
     private var shouldCaptureSmsTest: Boolean = true     // Default to true for SMS
     private var shouldCaptureDnsTest: Boolean = true     // Default to true for DNS
+    private var shouldCaptureUploadRate: Boolean = true  // Default to true for Upload
 
     // Handlers for periodic updates and location
     private val handler = Handler(Looper.getMainLooper())
-    private val UPDATE_INTERVAL_MS = 10000L // 5 seconds in milliseconds for each entry
+    private val UPDATE_INTERVAL_MS = 5000L // 5 seconds in milliseconds for each entry
 
     // New instances of our helper classes
     private lateinit var permissionHandler: PermissionHandler
@@ -82,13 +88,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var networkTester: NetworkTester
     private lateinit var smsTester: SmsTester // New SMS tester instance
     private lateinit var dnsTester: DnsTester // New DNS tester instance
+    private lateinit var uploadTester: UploadTester // New Upload tester instance
 
     // List to store recorded data - explicitly store mutable maps
     private val recordedDataList = mutableListOf<MutableMap<String, Any?>>()
     private var entryCount: Int = 0 // Counter for periodic SMS test
 
     // Request code for runtime permissions (must be unique for activity)
-    private val PERMISSION_REQUEST_CODE = 101
+    private val PERMISSION_REQUEST_CODE = 101 // KEPT THIS DECLARATION
 
     // Runnable to perform the updates (only records when isDriving is true)
     private val updateRunnable = object : Runnable {
@@ -163,76 +170,22 @@ class MainActivity : AppCompatActivity() {
                     currentDataEntry["dnsLookupTimeMs"] = dnsLookupTimeMs
                     currentDataEntry["dnsCaptureEnabled"] = shouldCaptureDnsTest // Log setting
 
+                    // Conditionally perform and store Upload test result
+                    var uploadRateKbps: Double? = null
+                    if (shouldCaptureUploadRate) {
+                        uploadRateKbps = uploadTester.performUploadTest()
+                    }
+                    currentDataEntry["uploadRateKbps"] = uploadRateKbps
+                    currentDataEntry["uploadCaptureEnabled"] = shouldCaptureUploadRate // Log setting
+
 
                     // Switch to Main thread to update UI and add to recorded list
                     withContext(Dispatchers.Main) {
                         // Only update UI and record if recording is still active
                         if (isDriving) {
-                            TransitionManager.beginDelayedTransition(rootLayout)
-                            val displayString = StringBuilder()
-                            displayString.append("--- Live Data: $currentTime ---\n")
-
-                            displayString.append("  Download: ")
-                            if (shouldCaptureDownloadRate) {
-                                if (downloadRateKbps != null) {
-                                    displayString.append("${String.format(Locale.getDefault(), "%.2f", downloadRateKbps)} KB/s\n")
-                                } else {
-                                    displayString.append("Failed or N/A\n")
-                                }
-                            } else {
-                                displayString.append("Not captured (checkbox unchecked)\n")
-                            }
-
-                            displayString.append("  Ping: ")
-                            if (shouldCapturePingTest) {
-                                if (pingResultMs != null) {
-                                    displayString.append("${String.format(Locale.getDefault(), "%.2f", pingResultMs)} ms\n")
-                                } else {
-                                    displayString.append("Failed or N/A (check Logcat for ping command issues)\n")
-                                }
-                            } else {
-                                displayString.append("Not captured (checkbox unchecked)\n")
-                            }
-
-                            displayString.append("  SMS: ")
-                            if (shouldCaptureSmsTest) {
-                                // For live display, use the value from currentDataEntry (could be "Pending..." or "Skipped" or "Permission Denied")
-                                displayString.append("${currentDataEntry["smsDeliveryTimeMs"] ?: "N/A"}\n")
-                            } else {
-                                displayString.append("Not captured (checkbox unchecked)\n")
-                            }
-
-                            displayString.append("  DNS Lookup: ")
-                            if (shouldCaptureDnsTest) {
-                                if (dnsLookupTimeMs != null) {
-                                    displayString.append("${String.format(Locale.getDefault(), "%.2f", dnsLookupTimeMs)} ms\n")
-                                } else {
-                                    displayString.append("Failed or N/A\n")
-                                }
-                            } else {
-                                displayString.append("Not captured (checkbox unchecked)\n")
-                            }
-
-
-                            // Display simplified location status
-                            val locationData = currentDataEntry["location"] as? LocationData
-                            if (locationData != null && locationData.latitude != null) {
-                                displayString.append("  Location: Fixed (Lat: ${String.format("%.6f", locationData.latitude)}, Long: ${String.format("%.6f", locationData.longitude)})\n")
-                            } else {
-                                displayString.append("  Location: ${locationData?.status ?: "N/A"}\n")
-                            }
-
-                            // Display simplified cell info
-                            val cellInfoData = currentDataEntry["cellInfo"] as? CellInfoData
-                            if (cellInfoData != null && cellInfoData.technology != null) {
-                                displayString.append("  Cell Tech: ${cellInfoData.technology ?: "N/A"}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
-                            } else {
-                                displayString.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
-                            }
-
-                            infoTextView.text = displayString.toString()
                             recordedDataList.add(currentDataEntry) // Add to list
                             Log.d("MainActivity", "Recording data: ${currentDataEntry["timestamp"]}")
+                            displayLiveCurrentData() // Now call this AFTER adding the data
                         }
                     }
                 }
@@ -265,7 +218,8 @@ class MainActivity : AppCompatActivity() {
         captureDownloadRateCheckBox = findViewById(R.id.captureDownloadRateCheckBox)
         capturePingTestCheckBox = findViewById(R.id.capturePingTestCheckBox)
         captureSmsTestCheckBox = findViewById(R.id.captureSmsTestCheckBox)
-        captureDnsTestCheckBox = findViewById(R.id.captureDnsTestCheckBox) // Initialize new DNS checkbox
+        captureDnsTestCheckBox = findViewById(R.id.captureDnsTestCheckBox)
+        captureUploadRateCheckBox = findViewById(R.id.captureUploadRateCheckBox)
 
 
         // Initialize helper classes
@@ -288,12 +242,13 @@ class MainActivity : AppCompatActivity() {
                     lastEntry["smsDeliveryTimeMs"] = deliveryTime?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "Failed"
                     // If we are still actively recording, refresh the live display to show the updated SMS status
                     if (isDriving) {
-                        displayLiveCurrentData() // Call a new helper to refresh live data
+                        displayLiveCurrentData() // Call to refresh live data
                     }
                 }
             }
         }
-        dnsTester = DnsTester(this) // Initialize DNS tester
+        dnsTester = DnsTester(this)
+        uploadTester = UploadTester(this)
 
         // Set initial state of checkboxes and their listeners
         captureDownloadRateCheckBox.isChecked = shouldCaptureDownloadRate
@@ -321,6 +276,13 @@ class MainActivity : AppCompatActivity() {
         captureDnsTestCheckBox.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
             shouldCaptureDnsTest = isChecked
             Log.d("MainActivity", "Capture DNS Test: $shouldCaptureDnsTest")
+            updateInfoTextViewHint()
+        }
+
+        captureUploadRateCheckBox.isChecked = shouldCaptureUploadRate
+        captureUploadRateCheckBox.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
+            shouldCaptureUploadRate = isChecked
+            Log.d("MainActivity", "Capture Upload Rate: $shouldCaptureUploadRate")
             updateInfoTextViewHint()
         }
 
@@ -466,8 +428,9 @@ class MainActivity : AppCompatActivity() {
         val downloadPart = if (shouldCaptureDownloadRate) "Download Rate" else ""
         val pingPart = if (shouldCapturePingTest) "Ping Test" else ""
         val smsPart = if (shouldCaptureSmsTest) "SMS Test" else ""
-        val dnsPart = if (shouldCaptureDnsTest) "DNS Test" else "" // New DNS part
-        val networkTests = listOf(downloadPart, pingPart, smsPart, dnsPart).filter { it.isNotEmpty() }.joinToString(" & ")
+        val dnsPart = if (shouldCaptureDnsTest) "DNS Test" else ""
+        val uploadPart = if (shouldCaptureUploadRate) "Upload Test" else ""
+        val networkTests = listOf(downloadPart, pingPart, smsPart, dnsPart, uploadPart).filter { it.isNotEmpty() }.joinToString(" & ")
 
         infoTextView.text = "Press START to begin recording network, cell, and location data.\n" +
                 "Network tests to capture: ${networkTests.ifEmpty { "None" }}."
@@ -475,15 +438,18 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Refreshes the live data display. Called by SMS callback to update pending SMS status.
+     * This now fetches the last entry from recordedDataList.
      */
     private fun displayLiveCurrentData() {
+        // Ensure there's data to display and we are actively recording
         if (isDriving && recordedDataList.isNotEmpty()) {
-            val lastEntry = recordedDataList.last()
+            val lastEntry = recordedDataList.last() // Get the last (most recent) entry
             val currentTime = lastEntry["timestamp"] as? String ?: "N/A"
             val downloadRateKbps = lastEntry["downloadRateKbps"] as? Double
             val pingResultMs = lastEntry["pingResultMs"] as? Double
             val smsDeliveryTimeMs = lastEntry["smsDeliveryTimeMs"] as? String
-            val dnsLookupTimeMs = lastEntry["dnsLookupTimeMs"] as? Double // New DNS value
+            val dnsLookupTimeMs = lastEntry["dnsLookupTimeMs"] as? Double
+            val uploadRateKbps = lastEntry["uploadRateKbps"] as? Double
 
             TransitionManager.beginDelayedTransition(rootLayout)
             val displayString = StringBuilder()
@@ -518,7 +484,7 @@ class MainActivity : AppCompatActivity() {
                 displayString.append("Not captured (checkbox unchecked)\n")
             }
 
-            displayString.append("  DNS Lookup: ") // New DNS display
+            displayString.append("  DNS Lookup: ")
             if (shouldCaptureDnsTest) {
                 if (dnsLookupTimeMs != null) {
                     displayString.append("${String.format(Locale.getDefault(), "%.2f", dnsLookupTimeMs)} ms\n")
@@ -529,6 +495,19 @@ class MainActivity : AppCompatActivity() {
                 displayString.append("Not captured (checkbox unchecked)\n")
             }
 
+            displayString.append("  Upload: ")
+            if (shouldCaptureUploadRate) {
+                if (uploadRateKbps != null) {
+                    displayString.append("${String.format(Locale.getDefault(), "%.2f", uploadRateKbps)} KB/s\n")
+                } else {
+                    displayString.append("Failed or N/A\n")
+                }
+            } else {
+                displayString.append("Not captured (checkbox unchecked)\n")
+            }
+
+
+            // Display simplified location status
             val locationData = lastEntry["location"] as? LocationData
             if (locationData != null && locationData.latitude != null) {
                 displayString.append("  Location: Fixed (Lat: ${String.format("%.6f", locationData.latitude)}, Long: ${String.format("%.6f", locationData.longitude)})\n")
@@ -536,6 +515,7 @@ class MainActivity : AppCompatActivity() {
                 displayString.append("  Location: ${locationData?.status ?: "N/A"}\n")
             }
 
+            // Display simplified cell info
             val cellInfoData = lastEntry["cellInfo"] as? CellInfoData
             if (cellInfoData != null && cellInfoData.technology != null) {
                 displayString.append("  Cell Tech: ${cellInfoData.technology ?: "N/A"}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
@@ -639,15 +619,25 @@ class MainActivity : AppCompatActivity() {
                     logBuilder.append("  DNS Lookup Time: Not Captured (checkbox unchecked)\n")
                 }
 
+                // Format Upload result if capture was enabled for this entry
+                val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean ?: false
+                if (uploadCaptureEnabled) {
+                    (dataMap["uploadRateKbps"] as? Double)?.let { upload ->
+                        logBuilder.append("  Upload Rate: ${String.format(Locale.getDefault(), "%.2f", upload)} KB/s\n")
+                    } ?: run {
+                        logBuilder.append("  Upload Rate: N/A (Failed or network issue during recording)\n")
+                    }
+                } else {
+                    logBuilder.append("  Upload Rate: Not Captured (checkbox unchecked)\n")
+                }
+
+
                 // Format cell info
-                val cellInfoData = dataMap["cellInfo"] as? CellInfoData
-                if (cellInfoData != null && cellInfoData.technology != null) {
+                (dataMap["cellInfo"] as? CellInfoData)?.let { cellInfoData ->
                     logBuilder.append("Cell Info:\n")
                     // This assumes CellInfoData has a status field and other fields that are desirable to display
-                    logBuilder.append("  Technology: ${cellInfoData.technology ?: "N/A"}\n")
-                    logBuilder.append("  Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
-                    // Add more fields if needed, e.g., plmnId, lac, cellId, etc.
-                    // For example:
+                    cellInfoData.technology?.let { logBuilder.append("  Technology: $it\n") }
+                    cellInfoData.signalStrength_dBm?.let { logBuilder.append("  Signal: $it dBm\n") }
                     cellInfoData.plmnId?.let { logBuilder.append("  PLMN-ID: $it\n") }
                     cellInfoData.lac?.let { logBuilder.append("  LAC: $it\n") }
                     cellInfoData.cellId?.let { logBuilder.append("  Cell ID: $it\n") }
@@ -662,8 +652,9 @@ class MainActivity : AppCompatActivity() {
                     cellInfoData.csiRsrq_dB?.let { logBuilder.append("  CSI-RSRQ: $it dB\n") }
                     cellInfoData.status?.let { status -> logBuilder.append("  Status: $status\n") }
 
-                } else {
-                    logBuilder.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
+                } ?: run {
+                    // Fallback if cellInfoData itself is null
+                    logBuilder.append("  Cell Info Status: N/A\n")
                 }
                 logBuilder.append("\n") // Separator between entries
             }

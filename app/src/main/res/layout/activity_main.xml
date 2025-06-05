@@ -82,6 +82,15 @@
         android:layout_height="wrap_content"
         android:text="Capture DNS Test"
         android:checked="true"
+        android:layout_marginBottom="4dp"
+        android:textSize="16sp" />
+
+    <CheckBox
+        android:id="@+id/captureUploadRateCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Capture Upload Rate"
+        android:checked="true"
         android:layout_marginBottom="8dp"
         android:textSize="16sp" />
 
