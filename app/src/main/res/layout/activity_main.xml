@@ -39,24 +39,39 @@
             android:textColor="@android:color/white" />
     </ScrollView>
 
-    <!-- Smaller ImageView: wraps content but never exceeds 100dp x 100dp -->
     <ImageView
         android:id="@+id/myImageView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
         android:layout_marginBottom="16dp"
         android:adjustViewBounds="true"
-        android:maxWidth="100dp"
-        android:maxHeight="100dp"
+        android:contentDescription="A beautiful image of Parvin"
         android:scaleType="fitCenter"
-        android:src="@drawable/logo"
-        android:contentDescription="A beautiful image of Parvin" />
+        android:src="@drawable/logo" />
 
     <CheckBox
         android:id="@+id/captureDownloadRateCheckBox"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Capture Download Rate"
+        android:checked="true"
+        android:layout_marginBottom="8dp"
+        android:textSize="16sp" />
+
+    <CheckBox
+        android:id="@+id/capturePingTestCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Capture Ping Test"
+        android:checked="true"
+        android:layout_marginBottom="8dp"
+        android:textSize="16sp" />
+
+    <CheckBox
+        android:id="@+id/captureSmsTestCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Capture SMS Test (Every 10 Entries)"
         android:checked="true"
         android:layout_marginBottom="16dp"
         android:textSize="16sp" />

@@ -5,7 +5,9 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
+import java.io.BufferedReader
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
@@ -20,6 +22,9 @@ class NetworkTester(private val context: Context) {
 
     // URL for the download test (a larger, publicly accessible ZIP file)
     private val DOWNLOAD_TEST_URL = "https://google.com"
+    // Host for the ping test
+    private val PING_TARGET_HOST = "google.com"
+
 
     /**
      * Checks if the device has an active network connection that is validated for internet access.
@@ -91,6 +96,76 @@ class NetworkTester(private val context: Context) {
         } finally {
             inputStream?.close() // Close input stream
             urlConnection?.disconnect() // Always disconnect the connection
+        }
+    }
+
+    /**
+     * Performs a ping test to a target host and returns the average round-trip time.
+     * This function should be called from a background (IO) thread.
+     *
+     * IMPORTANT: Direct execution of 'ping' command via Runtime.exec() might be restricted
+     * or disallowed on non-rooted Android devices due to security sandboxing, especially
+     * on newer Android versions. It may result in "Permission denied" or "command not found".
+     * @return Average ping time in milliseconds (Double) or null if ping fails/restricted.
+     */
+    fun performPingTest(): Double? {
+        if (!isNetworkAvailable()) {
+            Log.e("NetworkTester", "No active internet connection detected before ping test.")
+            return null
+        }
+
+        var process: Process? = null
+        var reader: BufferedReader? = null
+        try {
+            // ping -c 1: send 1 packet
+            // ping -W 5: wait 5 seconds for a response
+            // ping -t 64: set TTL (Time To Live) to 64 hops
+            val command = "ping -c 1 -W 5 -t 64 $PING_TARGET_HOST"
+            Log.d("NetworkTester", "Executing ping command: $command")
+            process = Runtime.getRuntime().exec(command)
+            reader = BufferedReader(InputStreamReader(process.inputStream))
+            var line: String?
+            val output = StringBuilder()
+            while (reader.readLine().also { line = it } != null) {
+                output.append(line).append("\n")
+            }
+
+            val exitCode = process.waitFor() // Wait for the ping command to complete
+            val fullOutput = output.toString()
+            Log.d("NetworkTester", "Ping command output:\n$fullOutput")
+            Log.d("NetworkTester", "Ping command exit code: $exitCode")
+
+            if (exitCode == 0) { // Success
+                // Parse the average ping time from the output
+                // Example output line: rtt min/avg/max/mdev = 10.123/15.456/20.789/2.345 ms
+                val pattern = "avg/max/mdev = ([0-9.]+)/".toRegex()
+                val matchResult = pattern.find(fullOutput)
+                val avgPingMs = matchResult?.groups?.get(1)?.value?.toDoubleOrNull()
+
+                if (avgPingMs != null) {
+                    Log.d("NetworkTester", "Ping to $PING_TARGET_HOST successful. Avg: ${avgPingMs} ms")
+                    return avgPingMs
+                } else {
+                    Log.e("NetworkTester", "Failed to parse average ping time from output for $PING_TARGET_HOST.")
+                    return null
+                }
+            } else {
+                Log.e("NetworkTester", "Ping command failed for $PING_TARGET_HOST. Exit code: $exitCode. Output:\n$fullOutput")
+                // Check if it's a permission denied error
+                if (fullOutput.contains("Permission denied", ignoreCase = true) ||
+                    fullOutput.contains("Operation not permitted", ignoreCase = true) ||
+                    fullOutput.contains("command not found", ignoreCase = true)
+                ) {
+                    Log.e("NetworkTester", "Ping command likely failed due to OS restrictions or lack of root privileges. This is common on non-rooted Android devices.")
+                }
+                return null
+            }
+        } catch (e: Exception) {
+            Log.e("NetworkTester", "Exception during ping test to $PING_TARGET_HOST: ${e.message}", e)
+            return null
+        } finally {
+            reader?.close()
+            process?.destroy() // Ensure the process is terminated
         }
     }
 }

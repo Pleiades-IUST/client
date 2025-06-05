@@ -2,14 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- REQUIRED PERMISSIONS FOR CELLULAR INFORMATION AND LOCATION -->
+    <!-- REQUIRED PERMISSIONS FOR CELLULAR INFORMATION, LOCATION, AND SMS -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <!-- Permission to access the internet for API calls (download test) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- NEW: Permission to check network state -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
 
 
     <application
@@ -31,6 +32,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- IMPORTANT: Broadcast receivers for SMS status -->
+        <!-- These receivers are handled internally by SmsTester using PendingIntents,
+             and thus do NOT need to be declared here with intent-filters for SMS_SENT/DELIVERED.
+             Declaring the permissions above is sufficient for their functionality. -->
+
     </application>
 
 </manifest>
