@@ -25,7 +25,9 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginBottom="16dp"
-        android:elevation="4dp">
+        android:elevation="4dp"
+        android:background="@drawable/rounded_log_background"
+        android:padding="8dp">
 
         <TextView
             android:id="@+id/infoTextView"
@@ -34,8 +36,6 @@
             android:text="Waiting for data...\nEnsure permissions are granted and location is enabled."
             android:textSize="16sp"
             android:fontFamily="monospace"
-            android:padding="8dp"
-            android:background="@drawable/rounded_log_background"
             android:textColor="@android:color/white" />
     </ScrollView>
 
@@ -72,6 +72,15 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Capture SMS Test (Every 10 Entries)"
+        android:checked="true"
+        android:layout_marginBottom="8dp"
+        android:textSize="16sp" />
+
+    <CheckBox
+        android:id="@+id/captureDnsTestCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Capture DNS Test"
         android:checked="true"
         android:layout_marginBottom="16dp"
         android:textSize="16sp" />

@@ -23,8 +23,36 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Important: capitalizeWords() is now a top-level function in Utils.kt,
-// so it will be automatically imported by Android Studio if needed.
+// Assuming LocationData and CellInfoData are defined elsewhere as data classes
+// Example:
+/*
+data class LocationData(
+    val latitude: Double?,
+    val longitude: Double?,
+    val status: String
+)
+
+data class CellInfoData(
+    val technology: String?,
+    val signalStrength_dBm: Int?,
+    val plmnId: String?,
+    val lac: Int?,
+    val cellId: Int?,
+    val pci: Int?,
+    val tac: Int?,
+    val nci: Long?, // For 5G NR
+    val nrarfcn: Int?, // For 5G NR
+    val bands: List<Int>?, // For 5G NR
+    val rsrp_dBm: Int?, // For LTE, NR
+    val rsrq_dB: Int?, // For LTE, NR
+    val csiRsrp_dBm: Int?, // For NR
+    val csiRsrq_dB: Int?, // For NR
+    val status: String // "OK", "Permissions Denied", etc.
+)
+*/
+// And a hypothetical Utils.kt for capitalizeWords extension function if not inlined.
+// If capitalizeWords() is not defined as an extension function and gives an error,
+// you might need to add it manually to your Utils.kt or directly inline the logic.
 
 class MainActivity : AppCompatActivity() {
 
@@ -35,15 +63,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var captureDownloadRateCheckBox: CheckBox // Declare the download checkbox
     private lateinit var capturePingTestCheckBox: CheckBox // Declare the ping checkbox
     private lateinit var captureSmsTestCheckBox: CheckBox // Declare the SMS checkbox
+    private lateinit var captureDnsTestCheckBox: CheckBox // Declare the DNS checkbox
 
-    // States for whether to capture download/ping/SMS rates
+    // States for whether to capture download/ping/SMS/DNS rates
     private var shouldCaptureDownloadRate: Boolean = true // Default to true
     private var shouldCapturePingTest: Boolean = true    // Default to true for ping
     private var shouldCaptureSmsTest: Boolean = true     // Default to true for SMS
+    private var shouldCaptureDnsTest: Boolean = true     // Default to true for DNS
 
     // Handlers for periodic updates and location
     private val handler = Handler(Looper.getMainLooper())
-    private val UPDATE_INTERVAL_MS = 10000L // 5 seconds in milliseconds for each entry
+    private val UPDATE_INTERVAL_MS = 5000L // 5 seconds in milliseconds for each entry
 
     // New instances of our helper classes
     private lateinit var permissionHandler: PermissionHandler
@@ -51,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cellInfoCollector: CellInfoCollector
     private lateinit var networkTester: NetworkTester
     private lateinit var smsTester: SmsTester // New SMS tester instance
+    private lateinit var dnsTester: DnsTester // New DNS tester instance
 
     // List to store recorded data - explicitly store mutable maps
     private val recordedDataList = mutableListOf<MutableMap<String, Any?>>()
@@ -99,7 +130,6 @@ class MainActivity : AppCompatActivity() {
                     currentDataEntry["pingCaptureEnabled"] = shouldCapturePingTest // Log setting
 
                     // Conditionally perform SMS test every 10 entries (including entry 1)
-                    // Initialize with "N/A" or "Skipped" and let the callback update to "Pending..." or actual time
                     var smsDeliveryTime: String? = null
                     currentDataEntry["smsCaptureEnabled"] = shouldCaptureSmsTest // Always log setting
                     if (shouldCaptureSmsTest) {
@@ -107,8 +137,7 @@ class MainActivity : AppCompatActivity() {
                         if (ContextCompat.checkSelfPermission(this@MainActivity, android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                             entryCount++ // Increment before checking, so entry 1 is the first time
                             // Send SMS on the 1st entry, and then every 10 entries (11th, 21st, etc.)
-//                            if (entryCount == 1 || (entryCount > 1 && (entryCount - 1) % 10 == 0)) {
-                            if (true) {
+                            if (entryCount == 1 || (entryCount > 1 && (entryCount - 1) % 10 == 0)) {
                                 Log.d("MainActivity", "Triggering SMS test (Entry $entryCount)")
                                 smsTester.sendSmsAndTrackDelivery("Test SMS from app. Entry: $entryCount, Time: $currentTime")
                                 smsDeliveryTime = "Pending..." // Placeholder until callback updates it
@@ -125,6 +154,14 @@ class MainActivity : AppCompatActivity() {
                         smsDeliveryTime = "Not Captured" // Checkbox unchecked
                     }
                     currentDataEntry["smsDeliveryTimeMs"] = smsDeliveryTime
+
+                    // Conditionally perform and store DNS test result
+                    var dnsLookupTimeMs: Double? = null
+                    if (shouldCaptureDnsTest) {
+                        dnsLookupTimeMs = dnsTester.performDnsTest()
+                    }
+                    currentDataEntry["dnsLookupTimeMs"] = dnsLookupTimeMs
+                    currentDataEntry["dnsCaptureEnabled"] = shouldCaptureDnsTest // Log setting
 
 
                     // Switch to Main thread to update UI and add to recorded list
@@ -161,6 +198,17 @@ class MainActivity : AppCompatActivity() {
                             if (shouldCaptureSmsTest) {
                                 // For live display, use the value from currentDataEntry (could be "Pending..." or "Skipped" or "Permission Denied")
                                 displayString.append("${currentDataEntry["smsDeliveryTimeMs"] ?: "N/A"}\n")
+                            } else {
+                                displayString.append("Not captured (checkbox unchecked)\n")
+                            }
+
+                            displayString.append("  DNS Lookup: ")
+                            if (shouldCaptureDnsTest) {
+                                if (dnsLookupTimeMs != null) {
+                                    displayString.append("${String.format(Locale.getDefault(), "%.2f", dnsLookupTimeMs)} ms\n")
+                                } else {
+                                    displayString.append("Failed or N/A\n")
+                                }
                             } else {
                                 displayString.append("Not captured (checkbox unchecked)\n")
                             }
@@ -216,7 +264,9 @@ class MainActivity : AppCompatActivity() {
         rootLayout = findViewById(R.id.rootLayout)
         captureDownloadRateCheckBox = findViewById(R.id.captureDownloadRateCheckBox)
         capturePingTestCheckBox = findViewById(R.id.capturePingTestCheckBox)
-        captureSmsTestCheckBox = findViewById(R.id.captureSmsTestCheckBox) // Initialize new SMS checkbox
+        captureSmsTestCheckBox = findViewById(R.id.captureSmsTestCheckBox)
+        captureDnsTestCheckBox = findViewById(R.id.captureDnsTestCheckBox) // Initialize new DNS checkbox
+
 
         // Initialize helper classes
         permissionHandler = PermissionHandler(this, PERMISSION_REQUEST_CODE)
@@ -243,6 +293,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        dnsTester = DnsTester(this) // Initialize DNS tester
 
         // Set initial state of checkboxes and their listeners
         captureDownloadRateCheckBox.isChecked = shouldCaptureDownloadRate
@@ -266,6 +317,13 @@ class MainActivity : AppCompatActivity() {
             updateInfoTextViewHint()
         }
 
+        captureDnsTestCheckBox.isChecked = shouldCaptureDnsTest
+        captureDnsTestCheckBox.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
+            shouldCaptureDnsTest = isChecked
+            Log.d("MainActivity", "Capture DNS Test: $shouldCaptureDnsTest")
+            updateInfoTextViewHint()
+        }
+
         // Initial UI State
         TransitionManager.beginDelayedTransition(rootLayout)
         updateInfoTextViewHint() // Set initial hint based on checkbox states
@@ -278,7 +336,7 @@ class MainActivity : AppCompatActivity() {
             isDriving = !isDriving // Toggle recording state
 
             if (isDriving) {
-                // Check if SMS permission is granted if SMS test is enableds
+                // Check if SMS permission is granted if SMS test is enabled
                 if (shouldCaptureSmsTest && ContextCompat.checkSelfPermission(this, android.Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
                     // If SMS test is enabled but permission is NOT granted, alert user and do not start.
                     TransitionManager.beginDelayedTransition(rootLayout)
@@ -299,22 +357,25 @@ class MainActivity : AppCompatActivity() {
                 infoTextView.text = "Starting data collection... Please wait for first live update."
                 Log.d("MainActivity", "Started recording. List cleared. Entry count reset.")
 
+                // Request all necessary permissions (including SMS if selected)
                 if (permissionHandler.checkAndRequestPermissions()) {
-                    // Permissions granted (including SMS if needed), start background updates and location updates
+                    // All permissions are now granted (or were already granted)
                     startUpdatingInfo()
                     locationTracker.startLocationUpdates()
-                    // Register SMS receivers ONLY if SMS test is enabled and permission is granted
+                    // Register SMS receivers ONLY if SMS test is enabled and permission is granted (redundant check, but safer)
                     if (shouldCaptureSmsTest && ContextCompat.checkSelfPermission(this, android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                         smsTester.registerReceivers()
                     }
                 } else {
-                    // Core permissions (Location/Phone State) not granted, reset state and inform user
+                    // If permissionHandler returns false, it means it *requested* permissions,
+                    // so the app won't immediately start. The result will come in onRequestPermissionsResult.
+                    // For now, reset state and wait.
                     isDriving = false
                     toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
                     toggleButton.text = "START"
                     TransitionManager.beginDelayedTransition(rootLayout)
-                    infoTextView.text = "Core permissions required (Location, Phone State) to access network, cell, and location information.\nPlease grant them in app settings and press START again."
-                    Log.w("MainActivity", "Recording attempted but core permissions not granted.")
+                    infoTextView.text = "Requesting permissions... Please grant all required permissions to proceed."
+                    Log.w("MainActivity", "Permissions were requested. Waiting for user response.")
                 }
             } else {
                 // STOP logic
@@ -335,12 +396,21 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // If permissions are already granted, ensure location updates are running when activity resumes
-        // and SMS receivers are registered if recording was active AND SMS permission is granted.
-        if (permissionHandler.checkPermissionsWithoutRequest() && isDriving) {
-            locationTracker.startLocationUpdates()
-            if (shouldCaptureSmsTest && ContextCompat.checkSelfPermission(this, android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
-                smsTester.registerReceivers()
+        // If recording is active and permissions (including SMS if needed) are granted, resume operations
+        if (isDriving) { // Only attempt to resume if the app *intended* to be recording
+            if (permissionHandler.checkPermissionsWithoutRequest()) { // Check all permissions including newly added SMS
+                locationTracker.startLocationUpdates()
+                if (shouldCaptureSmsTest && ContextCompat.checkSelfPermission(this, android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+                    smsTester.registerReceivers()
+                }
+            } else {
+                // If permissions are missing on resume while isDriving was true, stop recording
+                Log.w("MainActivity", "Permissions missing on resume while recording was active. Stopping recording.")
+                isDriving = false
+                toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
+                toggleButton.text = "START"
+                TransitionManager.beginDelayedTransition(rootLayout)
+                infoTextView.text = "Recording stopped. Permissions were revoked or not granted. Please grant them and press START again."
             }
         }
     }
@@ -363,35 +433,29 @@ class MainActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (permissionHandler.handlePermissionsResult(requestCode, grantResults)) {
-            // All core permissions granted. Now check SMS if needed.
-            if (isDriving) { // Only resume starting if user intends to drive
-                if (shouldCaptureSmsTest && ContextCompat.checkSelfPermission(this, android.Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-                    // SMS test enabled but permission NOT granted after request
-                    TransitionManager.beginDelayedTransition(rootLayout)
-                    infoTextView.text = "SMS Test requires SEND_SMS permission. Please grant it in app settings and press START again."
-                    isDriving = false // Do not proceed
-                    toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
-                    toggleButton.text = "START"
-                    Log.w("MainActivity", "SMS test enabled but SEND_SMS permission denied after request.")
-                } else {
-                    // All necessary permissions for current configuration are granted
-                    startUpdatingInfo() // Resume/start background updates
-                    locationTracker.startLocationUpdates() // Start location updates
-                    if (shouldCaptureSmsTest) { // Only register if checkbox is still checked
-                        smsTester.registerReceivers()
-                    }
+            // All requested permissions are now granted. Proceed with starting if intended.
+            if (isDriving) { // Check if the app is still meant to be in a 'driving' state after permission grant
+                startUpdatingInfo() // Resume/start background updates
+                locationTracker.startLocationUpdates() // Start location updates
+                if (shouldCaptureSmsTest) { // Only register if SMS test is still enabled
+                    smsTester.registerReceivers()
                 }
+            } else {
+                // Permissions granted, but the app was not in a 'driving' state, or was reset.
+                // Display initial hint.
+                updateInfoTextViewHint()
             }
         } else {
-            // Core permissions denied
+            // Some permissions were denied. Inform the user and reset state.
             TransitionManager.beginDelayedTransition(rootLayout)
-            infoTextView.text = "Core permissions required (Location, Phone State) to access network, cell, and location information.\nPlease grant them in app settings."
-            if (isDriving) { // Reset button state if permissions were denied while trying to start
+            infoTextView.text = "Not all required permissions were granted. Please grant them in app settings to use all features."
+            if (isDriving) { // If recording was attempted but permissions were denied, reset state
                 isDriving = false
                 toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
                 toggleButton.text = "START"
             }
-            Log.w("MainActivity", "Required core permissions not granted.")
+            Log.w("MainActivity", "Required permissions denied after request.")
+            updateInfoTextViewHint() // Update hint to reflect permission status
         }
     }
 
@@ -402,7 +466,8 @@ class MainActivity : AppCompatActivity() {
         val downloadPart = if (shouldCaptureDownloadRate) "Download Rate" else ""
         val pingPart = if (shouldCapturePingTest) "Ping Test" else ""
         val smsPart = if (shouldCaptureSmsTest) "SMS Test" else ""
-        val networkTests = listOf(downloadPart, pingPart, smsPart).filter { it.isNotEmpty() }.joinToString(" & ")
+        val dnsPart = if (shouldCaptureDnsTest) "DNS Test" else "" // New DNS part
+        val networkTests = listOf(downloadPart, pingPart, smsPart, dnsPart).filter { it.isNotEmpty() }.joinToString(" & ")
 
         infoTextView.text = "Press START to begin recording network, cell, and location data.\n" +
                 "Network tests to capture: ${networkTests.ifEmpty { "None" }}."
@@ -418,6 +483,7 @@ class MainActivity : AppCompatActivity() {
             val downloadRateKbps = lastEntry["downloadRateKbps"] as? Double
             val pingResultMs = lastEntry["pingResultMs"] as? Double
             val smsDeliveryTimeMs = lastEntry["smsDeliveryTimeMs"] as? String
+            val dnsLookupTimeMs = lastEntry["dnsLookupTimeMs"] as? Double // New DNS value
 
             TransitionManager.beginDelayedTransition(rootLayout)
             val displayString = StringBuilder()
@@ -452,6 +518,17 @@ class MainActivity : AppCompatActivity() {
                 displayString.append("Not captured (checkbox unchecked)\n")
             }
 
+            displayString.append("  DNS Lookup: ") // New DNS display
+            if (shouldCaptureDnsTest) {
+                if (dnsLookupTimeMs != null) {
+                    displayString.append("${String.format(Locale.getDefault(), "%.2f", dnsLookupTimeMs)} ms\n")
+                } else {
+                    displayString.append("Failed or N/A\n")
+                }
+            } else {
+                displayString.append("Not captured (checkbox unchecked)\n")
+            }
+
             val locationData = lastEntry["location"] as? LocationData
             if (locationData != null && locationData.latitude != null) {
                 displayString.append("  Location: Fixed (Lat: ${String.format("%.6f", locationData.latitude)}, Long: ${String.format("%.6f", locationData.longitude)})\n")
@@ -465,7 +542,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 displayString.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
             }
-
             infoTextView.text = displayString.toString()
         }
     }
@@ -551,20 +627,43 @@ class MainActivity : AppCompatActivity() {
                     logBuilder.append("  SMS Delivery Time: Not Captured (checkbox unchecked)\n")
                 }
 
+                // Format DNS result if capture was enabled for this entry
+                val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean ?: false
+                if (dnsCaptureEnabled) {
+                    (dataMap["dnsLookupTimeMs"] as? Double)?.let { dns ->
+                        logBuilder.append("  DNS Lookup Time: ${String.format(Locale.getDefault(), "%.2f", dns)} ms\n")
+                    } ?: run {
+                        logBuilder.append("  DNS Lookup Time: N/A (Failed or network issue during recording)\n")
+                    }
+                } else {
+                    logBuilder.append("  DNS Lookup Time: Not Captured (checkbox unchecked)\n")
+                }
+
                 // Format cell info
-                (dataMap["cellInfo"] as? CellInfoData)?.let { cellInfoData ->
+                val cellInfoData = dataMap["cellInfo"] as? CellInfoData
+                if (cellInfoData != null && cellInfoData.technology != null) {
                     logBuilder.append("Cell Info:\n")
-                    cellInfoData.javaClass.declaredFields.forEach { field ->
-                        field.isAccessible = true
-                        val value = field.get(cellInfoData)
-                        // Exclude synthetic fields and known problematic fields from display
-                        if (value != null && !field.isSynthetic && field.name != "status" && field.name != "serialVersionUID") {
-                            logBuilder.append("  ${field.name.replace("_", " ").capitalizeWords()}: $value\n")
-                        }
-                    }
-                    cellInfoData.status?.let { status ->
-                        logBuilder.append("  Status: $status\n")
-                    }
+                    // This assumes CellInfoData has a status field and other fields that are desirable to display
+                    logBuilder.append("  Technology: ${cellInfoData.technology ?: "N/A"}\n")
+                    logBuilder.append("  Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
+                    // Add more fields if needed, e.g., plmnId, lac, cellId, etc.
+                    // For example:
+                    cellInfoData.plmnId?.let { logBuilder.append("  PLMN-ID: $it\n") }
+                    cellInfoData.lac?.let { logBuilder.append("  LAC: $it\n") }
+                    cellInfoData.cellId?.let { logBuilder.append("  Cell ID: $it\n") }
+                    cellInfoData.rsrp_dBm?.let { logBuilder.append("  RSRP: $it dBm\n") }
+                    cellInfoData.rsrq_dB?.let { logBuilder.append("  RSRQ: $it dB\n") }
+                    cellInfoData.pci?.let { logBuilder.append("  PCI: $it\n") }
+                    cellInfoData.tac?.let { logBuilder.append("  TAC: $it\n") }
+//                    cellInfoData.nci?.let { logBuilder.append("  NCI: $it\n") }
+                    cellInfoData.nrarfcn?.let { logBuilder.append("  NR-ARFCN: $it\n") }
+                    cellInfoData.bands?.let { bands -> if (bands.isNotEmpty()) logBuilder.append("  Bands: ${bands.joinToString(", ")}\n") }
+                    cellInfoData.csiRsrp_dBm?.let { logBuilder.append("  CSI-RSRP: $it dBm\n") }
+                    cellInfoData.csiRsrq_dB?.let { logBuilder.append("  CSI-RSRQ: $it dB\n") }
+                    cellInfoData.status?.let { status -> logBuilder.append("  Status: $status\n") }
+
+                } else {
+                    logBuilder.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
                 }
                 logBuilder.append("\n") // Separator between entries
             }
