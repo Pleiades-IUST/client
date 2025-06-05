@@ -2,7 +2,8 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/rootLayout" android:layout_width="match_parent"
+    android:id="@+id/rootLayout"
+    android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="16dp"
@@ -13,17 +14,20 @@
         android:id="@+id/titleTextView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Pleiades"
+        android:text="Cell &amp; Location Info (Auto-Updating)"
         android:textSize="24sp"
         android:textStyle="bold"
         android:layout_marginBottom="24dp" />
 
     <ScrollView
+        android:id="@+id/scrollView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:layout_marginBottom="16dp"
-        android:elevation="4dp"> <TextView
+        android:elevation="4dp">
+
+        <TextView
             android:id="@+id/infoTextView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -31,17 +35,31 @@
             android:textSize="16sp"
             android:fontFamily="monospace"
             android:padding="8dp"
-            android:background="@drawable/rounded_log_background" android:textColor="@android:color/white" /> </ScrollView>
+            android:background="@drawable/rounded_log_background"
+            android:textColor="@android:color/white" />
+    </ScrollView>
 
+    <!-- Smaller ImageView: wraps content but never exceeds 100dp x 100dp -->
     <ImageView
         android:id="@+id/myImageView"
-        android:layout_width="250dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
         android:adjustViewBounds="true"
-        android:contentDescription="A beautiful image of Parvin"
+        android:maxWidth="100dp"
+        android:maxHeight="100dp"
         android:scaleType="fitCenter"
-        android:src="@drawable/logo" />
+        android:src="@drawable/logo"
+        android:contentDescription="A beautiful image of Parvin" />
+
+    <CheckBox
+        android:id="@+id/captureDownloadRateCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Capture Download Rate"
+        android:checked="true"
+        android:layout_marginBottom="16dp"
+        android:textSize="16sp" />
 
     <Button
         android:id="@+id/toggleButton"

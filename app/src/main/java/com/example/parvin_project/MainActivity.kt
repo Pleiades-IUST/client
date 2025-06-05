@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -29,13 +31,22 @@ import android.telephony.TelephonyManager
 import android.util.Log
 import android.widget.Button
 import android.widget.TextView
+import android.widget.CheckBox // Import CheckBox
+import android.widget.CompoundButton // Import CompoundButton
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.transition.TransitionManager // Import for smooth transitions
-import android.view.ViewGroup // Import for ViewGroup
-
+import androidx.transition.TransitionManager
+import android.view.ViewGroup
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
+import java.util.Arrays
 import java.util.Date
 import java.util.Locale
 
@@ -47,10 +58,15 @@ class MainActivity : AppCompatActivity(), LocationListener {
     private lateinit var infoTextView: TextView // Displays cell and location info
     private lateinit var toggleButton: Button // Declare the toggle button
     private lateinit var rootLayout: ViewGroup // Reference to the root layout for transitions
+    private lateinit var connectivityManager: ConnectivityManager // For checking network status
+    private lateinit var captureDownloadRateCheckBox: CheckBox // Declare the checkbox
+
+    // State for whether to capture download rate
+    private var shouldCaptureDownloadRate: Boolean = true // Default to true
 
     // Handler to schedule periodic updates
     private val handler = Handler(Looper.getMainLooper())
-    private val UPDATE_INTERVAL_MS = 3000L // 3 seconds in milliseconds for both cell and location
+    private val UPDATE_INTERVAL_MS = 5000L // 5 seconds in milliseconds for each entry
 
     // Stores the last known location
     private var lastKnownLocation: Location? = null
@@ -58,27 +74,87 @@ class MainActivity : AppCompatActivity(), LocationListener {
     // List to store recorded data
     private val recordedDataList = mutableListOf<Map<String, Any?>>()
 
+    // URL for the download test (a larger, publicly accessible ZIP file)
+    private val DOWNLOAD_TEST_URL = "https://google.com"
+
     // Runnable to perform the updates (only records when isDriving is true)
     private val updateRunnable = object : Runnable {
         override fun run() {
             if (checkPermissionsWithoutRequest()) {
-                val (uiString, structuredData) = getCellAndLocationData() // Get both UI string and structured data
-
-                // Only record data if isDriving is true
-                if (isDriving) {
-                    recordedDataList.add(structuredData)
-                    Log.d("CellInfoExtractor", "Recording data: ${structuredData["timestamp"]}")
+                // First, immediately show that a test is performing
+                runOnUiThread {
+                    TransitionManager.beginDelayedTransition(rootLayout)
+                    infoTextView.text = "Performing network & data collection... Please wait."
                 }
-                // UI is NOT updated here when recording
+
+                // Launch a coroutine for background network operation and data collection
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val currentDataEntry = mutableMapOf<String, Any?>()
+                    val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                    currentDataEntry["timestamp"] = currentTime
+
+                    var downloadRateKbps: Double? = null
+                    if (shouldCaptureDownloadRate) {
+                        // Perform HTTP download test only if checkbox is checked
+                        downloadRateKbps = performHttpDownloadTest()
+                    }
+                    currentDataEntry["downloadRateKbps"] = downloadRateKbps
+                    currentDataEntry["downloadCaptureEnabled"] = shouldCaptureDownloadRate // Log setting
+
+                    // Collect location data
+                    currentDataEntry["location"] = getLocationData()
+
+                    // Collect cell info data
+                    currentDataEntry["cellInfo"] = getCellInfoData()
+
+                    // Switch to Main thread to update UI and add to recorded list
+                    withContext(Dispatchers.Main) {
+                        // Only update UI and record if recording is still active (user hasn't pressed STOP)
+                        if (isDriving) {
+                            TransitionManager.beginDelayedTransition(rootLayout)
+                            val displayString = StringBuilder()
+                            displayString.append("--- Live Data: $currentTime ---\n")
+
+                            displayString.append("  Download: ")
+                            if (shouldCaptureDownloadRate) {
+                                if (downloadRateKbps != null) {
+                                    displayString.append("${String.format(Locale.getDefault(), "%.2f", downloadRateKbps)} KB/s\n")
+                                } else {
+                                    displayString.append("Failed or N/A\n")
+                                }
+                            } else {
+                                displayString.append("Not captured (checkbox unchecked)\n")
+                            }
+
+                            // Display simplified location status
+                            val locationMap = currentDataEntry["location"] as? Map<*, *>
+                            if (locationMap != null && locationMap["latitude"] != null) {
+                                displayString.append("  Location: Fixed (Lat: ${String.format("%.6f", locationMap["latitude"] as? Double)}, Long: ${String.format("%.6f", locationMap["longitude"] as? Double)})\n")
+                            } else {
+                                displayString.append("  Location: ${locationMap?.get("status") ?: "N/A"}\n")
+                            }
+
+                            // Display simplified cell info
+                            val cellInfoMap = currentDataEntry["cellInfo"] as? Map<*, *>
+                            if (cellInfoMap != null && cellInfoMap["technology"] != null) {
+                                displayString.append("  Cell Tech: ${cellInfoMap["technology"] ?: "N/A"}, Signal: ${cellInfoMap["signalStrength_dBm"] ?: "N/A"} dBm\n")
+                            } else {
+                                displayString.append("  Cell Status: ${cellInfoMap?.get("status") ?: "N/A"}\n")
+                            }
+
+                            infoTextView.text = displayString.toString()
+                            recordedDataList.add(currentDataEntry) // Add to list
+                            Log.d("CellInfoExtractor", "Recording data: ${currentDataEntry["timestamp"]}")
+                        }
+                    }
+                }
             } else {
-                // If permissions are somehow lost, log a warning
                 Log.w("CellInfoExtractor", "Permissions missing during scheduled update.")
                 // If permissions are lost while recording, stop the recording to prevent errors
                 if (isDriving) {
                     runOnUiThread { // Ensure UI updates are on the main thread
-                        // Simulate a click to toggle the button state and trigger the stop logic
-                        toggleButton.performClick()
-                        TransitionManager.beginDelayedTransition(rootLayout) // Smooth transition for permission message
+                        toggleButton.performClick() // Simulate a click to trigger the STOP logic
+                        TransitionManager.beginDelayedTransition(rootLayout)
                         infoTextView.text = "Recording stopped: Permissions lost.\nPlease grant permissions and press START again."
                     }
                 }
@@ -99,12 +175,32 @@ class MainActivity : AppCompatActivity(), LocationListener {
         setContentView(R.layout.activity_main)
 
         infoTextView = findViewById(R.id.infoTextView)
-        toggleButton = findViewById(R.id.toggleButton) // Corrected: Removed redundant 'id/'
+        toggleButton = findViewById(R.id.toggleButton)
         rootLayout = findViewById(R.id.rootLayout) // Initialize rootLayout for transitions
+        captureDownloadRateCheckBox = findViewById(R.id.captureDownloadRateCheckBox) // Initialize CheckBox
+
+        // Initialize ConnectivityManager
+        connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        // Set initial state of checkbox and its listener
+        captureDownloadRateCheckBox.isChecked = shouldCaptureDownloadRate
+        captureDownloadRateCheckBox.setOnCheckedChangeListener { _: CompoundButton, isChecked: Boolean ->
+            shouldCaptureDownloadRate = isChecked
+            Log.d("CheckBox", "Capture Download Rate: $shouldCaptureDownloadRate")
+            // You might want to update the UI hint if recording is not active
+            if (!isDriving) {
+                if (shouldCaptureDownloadRate) {
+                    infoTextView.text = "Press START to begin recording network, cell, and location data (Download Rate will be captured)."
+                } else {
+                    infoTextView.text = "Press START to begin recording cell and location data (Download Rate will NOT be captured)."
+                }
+            }
+        }
+
 
         // **Initial UI State: No logs displayed, button ready to start**
         TransitionManager.beginDelayedTransition(rootLayout) // Smooth transition for initial text
-        infoTextView.text = "Press START to begin recording data."
+        infoTextView.text = "Press START to begin recording network, cell, and location data."
         toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
         toggleButton.text = "START"
 
@@ -114,6 +210,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
 
         // Set a click listener for the toggle button
         toggleButton.setOnClickListener {
+            Log.d("ToggleButton", "Button click detected! isDriving state before: $isDriving") // Debug log
             // Toggle the isDriving state
             isDriving = !isDriving
 
@@ -122,22 +219,23 @@ class MainActivity : AppCompatActivity(), LocationListener {
                 toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.red_500))
                 toggleButton.text = "STOP (Recording)"
                 recordedDataList.clear() // Clear previous data when starting a new session
-                TransitionManager.beginDelayedTransition(rootLayout) // Smooth transition for recording message
-                infoTextView.text = "Recording data... (Logs will be displayed after pressing STOP)" // UI message during recording
+
+                // Initial message before the first live data comes in
+                TransitionManager.beginDelayedTransition(rootLayout)
+                infoTextView.text = "Starting data collection... Please wait for first live update."
                 Log.d("ToggleButton", "Started recording. List cleared.")
 
                 // Request permissions and start updates
                 if (checkAndRequestPermissions()) {
-                    // Permissions granted, start background updates
-                    startUpdatingInfo() // Starts the runnable for background data fetching/recording
-                    requestLocationUpdates() // Also start listening for real-time location updates
+                    startUpdatingInfo() // This now triggers the coroutine-based update
+                    requestLocationUpdates() // Keep location updates running in parallel
                 } else {
                     // Permissions not granted, reset state and inform user
                     isDriving = false // Revert state as recording can't start
                     toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
                     toggleButton.text = "START"
-                    TransitionManager.beginDelayedTransition(rootLayout) // Smooth transition for permission denial message
-                    infoTextView.text = "Permissions required to access cell and location information.\nPlease grant them in app settings and press START again."
+                    TransitionManager.beginDelayedTransition(rootLayout)
+                    infoTextView.text = "Permissions required to access network, cell, and location information.\nPlease grant them in app settings and press START again."
                     Log.w("ToggleButton", "Recording attempted but permissions not granted.")
                 }
 
@@ -147,8 +245,8 @@ class MainActivity : AppCompatActivity(), LocationListener {
                 toggleButton.text = "START"
                 Log.d("ToggleButton", "Stopped recording. Displaying data.")
 
-                stopUpdatingInfo() // Stops the runnable from running in the background
-                locationManager.removeUpdates(this) // Stop location listener too
+                stopUpdatingInfo() // Stops the runnable from rescheduling
+                locationManager.removeUpdates(this) // Stop location listener
 
                 displayRecordedData() // Display all recorded data
             }
@@ -158,7 +256,6 @@ class MainActivity : AppCompatActivity(), LocationListener {
     override fun onResume() {
         super.onResume()
         // Ensure location updates are being received if permissions are already granted
-        // This makes `lastKnownLocation` as current as possible when recording starts.
         if (checkPermissionsWithoutRequest()) {
             requestLocationUpdates()
         }
@@ -192,15 +289,17 @@ class MainActivity : AppCompatActivity(), LocationListener {
     }
 
     /**
-     * Checks if the required permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, READ_PHONE_STATE)
+     * Checks if the required permissions (ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, READ_PHONE_STATE, INTERNET)
      * are granted. If not, it requests them from the user.
-     * This version requests permissions if not granted.
      * @return true if all required permissions are already granted, false otherwise.
      */
     private fun checkAndRequestPermissions(): Boolean {
         val fineLocationPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
         val coarseLocationPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
         val readPhoneStatePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+        val internetPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
+        val networkStatePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_NETWORK_STATE)
+
 
         val permissionsToRequest = mutableListOf<String>()
 
@@ -212,6 +311,12 @@ class MainActivity : AppCompatActivity(), LocationListener {
         }
         if (readPhoneStatePermission != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
+        }
+        if (internetPermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.INTERNET)
+        }
+        if (networkStatePermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_NETWORK_STATE)
         }
 
         if (permissionsToRequest.isNotEmpty()) {
@@ -229,7 +334,10 @@ class MainActivity : AppCompatActivity(), LocationListener {
         val fineLocationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseLocationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val readPhoneStateGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
-        return (fineLocationGranted || coarseLocationGranted) && readPhoneStateGranted
+        val internetGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED
+        val networkStateGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_NETWORK_STATE) == PackageManager.PERMISSION_GRANTED
+
+        return (fineLocationGranted || coarseLocationGranted) && readPhoneStateGranted && internetGranted && networkStateGranted
     }
 
     /**
@@ -258,7 +366,7 @@ class MainActivity : AppCompatActivity(), LocationListener {
             } else {
                 // If permissions are denied, update UI and reset state if it was trying to record
                 TransitionManager.beginDelayedTransition(rootLayout) // Smooth transition for permission denial message
-                infoTextView.text = "Permissions required to access cell and location information.\nPlease grant them in app settings."
+                infoTextView.text = "Permissions required to access network, cell, and location information.\nPlease grant them in app settings."
                 if (isDriving) { // Reset button state if permissions were denied while trying to start
                     isDriving = false
                     toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
@@ -267,6 +375,17 @@ class MainActivity : AppCompatActivity(), LocationListener {
                 Log.w("CellInfoExtractor", "Required permissions not granted.")
             }
         }
+    }
+
+    /**
+     * Checks if the device has an active network connection.
+     * Requires ACCESS_NETWORK_STATE permission.
+     */
+    private fun isNetworkAvailable(): Boolean {
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     /**
@@ -334,17 +453,71 @@ class MainActivity : AppCompatActivity(), LocationListener {
     }
 
     /**
-     * Extracts and returns serving cell information and location data as a Pair:
-     * The `structuredDataMap` is what's important for recording.
+     * Performs an HTTP GET download test to measure download rate.
+     * This function should be called from a background thread.
+     * @return Download rate in KB/s (Double) or null if an error occurs.
      */
-    private fun getCellAndLocationData(): Pair<String, Map<String, Any?>> {
-        val uiStringBuilder = StringBuilder() // Kept for consistency but not directly used for UI now
-        val structuredDataMap = mutableMapOf<String, Any?>()
+    private fun performHttpDownloadTest(): Double? {
+        var urlConnection: HttpURLConnection? = null
+        var inputStream: InputStream? = null
+        try {
+            // First, check for general network availability before attempting download
+            if (!isNetworkAvailable()) {
+                Log.e("DownloadTest", "No active internet connection detected.")
+                return null
+            }
 
-        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-        structuredDataMap["timestamp"] = currentTime
+            val url = URL(DOWNLOAD_TEST_URL)
+            urlConnection = url.openConnection() as HttpURLConnection
+            urlConnection.requestMethod = "GET"
+            urlConnection.connectTimeout = 5000 // 5 seconds for connection
+            urlConnection.readTimeout = 15000   // 15 seconds for reading data
+            urlConnection.instanceFollowRedirects = true // Follow redirects
 
-        // Append Location Info
+            val startTime = System.nanoTime()
+            urlConnection.connect() // Explicitly connect
+
+            val responseCode = urlConnection.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                Log.e("DownloadTest", "HTTP error code: $responseCode for $DOWNLOAD_TEST_URL")
+                return null
+            }
+
+            inputStream = urlConnection.inputStream
+            var bytesDownloaded = 0L
+            val buffer = ByteArray(4096) // 4KB buffer
+
+            var bytesRead: Int
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                bytesDownloaded += bytesRead
+            }
+            val endTime = System.nanoTime()
+
+            val durationNs = endTime - startTime
+            if (durationNs <= 0) {
+                Log.w("DownloadTest", "Download duration was zero or negative. Bytes: $bytesDownloaded")
+                return null // Avoid division by zero
+            }
+
+            val durationSeconds = durationNs / 1_000_000_000.0 // Convert nanoseconds to seconds
+            val downloadRateBytesPerSecond = bytesDownloaded / durationSeconds
+            val downloadRateKbps = downloadRateBytesPerSecond / 1024.0 // Convert to KB/s
+
+            Log.d("DownloadTest", "Downloaded $bytesDownloaded bytes in ${String.format(Locale.getDefault(), "%.2f", durationSeconds)}s. Rate: ${String.format(Locale.getDefault(), "%.2f", downloadRateKbps)} KB/s")
+            return downloadRateKbps
+        } catch (e: Exception) {
+            Log.e("DownloadTest", "Error during HTTP download test for $DOWNLOAD_TEST_URL: ${e.message}", e)
+            return null
+        } finally {
+            inputStream?.close() // Close input stream
+            urlConnection?.disconnect() // Always disconnect the connection
+        }
+    }
+
+    /**
+     * Collects and returns location data.
+     */
+    private fun getLocationData(): Map<String, Any?> {
         val locationData = mutableMapOf<String, Any?>()
         if (lastKnownLocation != null) {
             val lat = String.format("%.6f", lastKnownLocation!!.latitude).toDouble()
@@ -363,11 +536,14 @@ class MainActivity : AppCompatActivity(), LocationListener {
             locationData["longitude"] = null
             locationData["status"] = status
         }
-        structuredDataMap["location"] = locationData
+        return locationData
+    }
 
-        // Append Cell Info
+    /**
+     * Collects and returns cell information.
+     */
+    private fun getCellInfoData(): Map<String, Any?> {
         val cellData = mutableMapOf<String, Any?>()
-
         try {
             val cellInfoList: List<CellInfo>? = telephonyManager.allCellInfo
 
@@ -502,14 +678,31 @@ class MainActivity : AppCompatActivity(), LocationListener {
             cellData["status"] = "Error getting cell info: ${e.message}"
             Log.e("CellInfoExtractor", "Error getting cell info: ${e.message}", e)
         }
-        structuredDataMap["cellInfo"] = cellData
+        return cellData
+    }
 
-        // The first element of the pair (uiStringBuilder.toString()) is largely unused now for direct UI updates.
+
+    /**
+     * This function is now responsible for gathering all structured data
+     * (though for this debug phase, only timestamp is directly returned from here).
+     * The download and upload tests are performed in the updateRunnable's coroutine.
+     */
+    private fun getCellAndLocationData(): Pair<String, Map<String, Any?>> {
+        val uiStringBuilder = StringBuilder() // Placeholder; UI string is built in updateRunnable
+        val structuredDataMap = mutableMapOf<String, Any?>()
+
+        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        structuredDataMap["timestamp"] = currentTime
+
+        // This method no longer performs the network tests directly
+        // It's just a placeholder for data collection structure.
+
         return Pair(uiStringBuilder.toString(), structuredDataMap)
     }
 
     /**
      * Displays all recorded data in the infoTextView.
+     * Now primarily displays download and upload rates.
      */
     private fun displayRecordedData() {
         // Start transition before updating text
@@ -519,13 +712,14 @@ class MainActivity : AppCompatActivity(), LocationListener {
         if (recordedDataList.isEmpty()) {
             logBuilder.append("No data was recorded during the last session.")
         } else {
-            logBuilder.append("--- RECORDED SESSION LOGS (${recordedDataList.size} entries) ---\n\n")
+            logBuilder.append("--- RECORDED SESSION LOGS (${recordedDataList.size} entries) ---\n\n") // Updated title
             recordedDataList.forEachIndexed { index, dataMap ->
                 logBuilder.append("--- Entry ${index + 1} ---\n")
                 // Format timestamp
                 (dataMap["timestamp"] as? String)?.let {
                     logBuilder.append("Timestamp: $it\n")
                 }
+
                 // Format location
                 (dataMap["location"] as? Map<*, *>)?.let { locationMap ->
                     logBuilder.append("Location:\n")
@@ -536,14 +730,26 @@ class MainActivity : AppCompatActivity(), LocationListener {
                         logBuilder.append("  Status: ${locationMap["status"] ?: "N/A"}\n")
                     }
                 }
+
+                // Format download rate if capture was enabled for this entry
+                val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean ?: true // Default to true if not logged
+                if (downloadCaptureEnabled) {
+                    (dataMap["downloadRateKbps"] as? Double)?.let { rate ->
+                        logBuilder.append("  Download Rate: ${String.format(Locale.getDefault(), "%.2f", rate)} KB/s\n")
+                    } ?: run {
+                        logBuilder.append("  Download Rate: N/A (Failed or no internet during recording)\n")
+                    }
+                } else {
+                    logBuilder.append("  Download Rate: Not Captured (checkbox unchecked)\n")
+                }
+
+                // Removed upload rate formatting
+
                 // Format cell info
                 (dataMap["cellInfo"] as? Map<*, *>)?.let { cellInfoMap ->
                     logBuilder.append("Cell Info:\n")
-                    // Iterate through each key-value pair in the cellInfoMap to display all collected data
                     cellInfoMap.forEach { (key, value) ->
-                        // Exclude specific internal keys if they don't add value to display
                         if (key !in listOf("identityDetails", "details_api_level", "cellInfoType")) {
-                            // Explicitly cast 'key' to String before using string functions
                             logBuilder.append("  ${(key as String).replace("_", " ").capitalizeWords()}: ${value ?: "N/A"}\n")
                         }
                     }
