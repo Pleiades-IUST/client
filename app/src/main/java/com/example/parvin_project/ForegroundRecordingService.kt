@@ -113,7 +113,7 @@ class ForegroundRecordingService : LifecycleService() {
                     if (ContextCompat.checkSelfPermission(this@ForegroundRecordingService, android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
                         entryCount++
                         // Send SMS on the 1st entry, and then every 10 entries (11th, 21st, etc.)
-                        if (entryCount == 1 || (entryCount - 1) % 10 == 0) { // Corrected modulo logic for every 10 entries
+                        if (entryCount == 1 || (entryCount - 1) % 10 == 0) {
                             Log.d("ForegroundService", "Triggering SMS test (Entry $entryCount)")
                             smsTester.sendSmsAndTrackDelivery("Test SMS from service. Entry: $entryCount, Time: $currentTime")
                             smsDeliveryTime = "Pending..."
@@ -148,7 +148,6 @@ class ForegroundRecordingService : LifecycleService() {
                 // Send live data update to MainActivity via LocalBroadcastManager
                 withContext(Dispatchers.Main) {
                     val intent = Intent(ServiceConstants.ACTION_UPDATE_UI)
-                    // Pass the formatted live data string to the Activity
                     intent.putExtra(ServiceConstants.EXTRA_LIVE_DATA, formatDataForDisplay(currentDataEntry))
                     localBroadcastManager.sendBroadcast(intent)
                     Log.d("ForegroundService", "Sent live data update.")
@@ -168,7 +167,6 @@ class ForegroundRecordingService : LifecycleService() {
         val displayString = StringBuilder()
         displayString.append("--- Live Data: ${dataMap["timestamp"] as? String ?: "N/A"} ---\n")
 
-        // Append download rate
         val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean ?: false
         displayString.append("  Download: ")
         if (downloadCaptureEnabled) {
@@ -179,7 +177,6 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        // Append ping result
         val pingCaptureEnabled = dataMap["pingCaptureEnabled"] as? Boolean ?: false
         displayString.append("  Ping: ")
         if (pingCaptureEnabled) {
@@ -190,7 +187,6 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        // Append SMS
         val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean ?: false
         displayString.append("  SMS: ")
         if (smsCaptureEnabled) {
@@ -199,7 +195,6 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        // Append DNS
         val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean ?: false
         displayString.append("  DNS Lookup: ")
         if (dnsCaptureEnabled) {
@@ -210,7 +205,6 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        // Append Upload
         val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean ?: false
         displayString.append("  Upload: ")
         if (uploadCaptureEnabled) {
@@ -221,7 +215,6 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        // Append location
         val locationData = dataMap["location"] as? LocationData
         if (locationData != null && locationData.latitude != null) {
             displayString.append("  Location: Fixed (Lat: ${String.format("%.6f", locationData.latitude)}, Long: ${String.format("%.6f", locationData.longitude)})\n")
@@ -229,7 +222,6 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("  Location: ${locationData?.status ?: "N/A"}\n")
         }
 
-        // Append cell info
         val cellInfoData = dataMap["cellInfo"] as? CellInfoData
         if (cellInfoData != null && cellInfoData.technology != null) {
             displayString.append("  Cell Tech: ${cellInfoData.technology ?: "N/A"}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
@@ -243,23 +235,17 @@ class ForegroundRecordingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
-        // Initialize Handler with the main Looper for UI-related tasks (like posting to updateRunnable)
         handler = Handler(Looper.getMainLooper())
-        // Initialize LocalBroadcastManager for communication with MainActivity
         localBroadcastManager = LocalBroadcastManager.getInstance(this)
 
-        // Initialize helper classes, passing the service's context (this)
         locationTracker = LocationTracker(this, UPDATE_INTERVAL_MS) { /* Location updates handled internally by service */ }
         cellInfoCollector = CellInfoCollector(this)
         networkTester = NetworkTester(this)
-        // SMS tester needs a callback for delivery status, which will update the recordedDataList
-        // and then broadcast the live update to MainActivity.
         smsTester = SmsTester(this) { deliveryTime ->
             lifecycleScope.launch(Dispatchers.Main) {
                 if (recordedDataList.isNotEmpty()) {
                     val lastEntry = recordedDataList.last() as MutableMap<String, Any?>
                     lastEntry["smsDeliveryTimeMs"] = deliveryTime?.let { String.format(Locale.getDefault(), "%.2f", it) } ?: "Failed"
-                    // Re-send update for UI to reflect the SMS status change
                     val intent = Intent(ServiceConstants.ACTION_UPDATE_UI)
                     intent.putExtra(ServiceConstants.EXTRA_LIVE_DATA, formatDataForDisplay(lastEntry))
                     localBroadcastManager.sendBroadcast(intent)
@@ -269,83 +255,66 @@ class ForegroundRecordingService : LifecycleService() {
         dnsTester = DnsTester(this)
         uploadTester = UploadTester(this)
 
-        // Create the notification channel when the service is created
         createNotificationChannel()
     }
 
-    /**
-     * Called by the system when the service is first created or when startService() is called.
-     * This is where we handle START/STOP commands and get initial configuration.
-     */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
         when (intent?.action) {
             ServiceConstants.ACTION_START_RECORDING -> {
                 Log.d("ForegroundService", "Received START command.")
-                // Retrieve checkbox states passed from MainActivity
                 shouldCaptureDownloadRate = intent.getBooleanExtra("shouldCaptureDownloadRate", true)
                 shouldCapturePingTest = intent.getBooleanExtra("shouldCapturePingTest", true)
                 shouldCaptureSmsTest = intent.getBooleanExtra("shouldCaptureSmsTest", true)
                 shouldCaptureDnsTest = intent.getBooleanExtra("shouldCaptureDnsTest", true)
                 shouldCaptureUploadRate = intent.getBooleanExtra("shouldCaptureUploadRate", true)
 
-                // Start the service in the foreground immediately
-                startForeground(ServiceConstants.NOTIFICATION_ID, createNotification("Recording network data...").build())
-                startRecording() // Begin data collection
+                // Start the service in the foreground with the updated notification
+                startForeground(ServiceConstants.NOTIFICATION_ID, createNotification("Network Monitor: Mobile network data collection is active in the background.").build())
+                startRecording()
             }
             ServiceConstants.ACTION_STOP_RECORDING -> {
                 Log.d("ForegroundService", "Received STOP command.")
-                stopRecording() // This method now handles sending full logs and stopping the service
+                stopRecording()
             }
             ServiceConstants.ACTION_REQUEST_FULL_LOGS -> {
                 Log.d("ForegroundService", "Received explicit request for full logs. Sending now.")
-                sendFullLogsToActivity(andThenStopSelf = false) // No need to stop self for an explicit request
+                sendFullLogsToActivity(andThenStopSelf = false)
             }
         }
 
-        // START_STICKY means the service will be re-created by the system if it's killed.
-        // The last intent received will be null upon recreation.
         return START_STICKY
     }
 
-    /**
-     * Starts the periodic data recording process.
-     */
     private fun startRecording() {
-        handler.removeCallbacks(updateRunnable) // Remove any existing callbacks to prevent duplicates
-        recordedDataList.clear() // Clear previous session's data
-        entryCount = 0 // Reset entry counter for SMS test
-        locationTracker.startLocationUpdates() // Start listening for location updates
-        smsTester.registerReceivers() // Register SMS broadcast receivers
-        handler.post(updateRunnable) // Start the periodic data collection
+        handler.removeCallbacks(updateRunnable)
+        recordedDataList.clear()
+        entryCount = 0
+        locationTracker.startLocationUpdates()
+        smsTester.registerReceivers()
+        handler.post(updateRunnable)
         Log.d("ForegroundService", "Recording started.")
-        updateNotification("Recording active...") // Update the persistent notification
+        // Update notification to indicate active background recording
+        updateNotification("⚠ Big Brother Broadcast: Connection traced. Coordinates acquired. You are exposed.");
     }
 
-    /**
-     * Stops the data recording process, sends full logs, and stops the service.
-     */
     private fun stopRecording() {
-        handler.removeCallbacks(updateRunnable) // Stop the periodic updates
-        locationTracker.stopLocationUpdates() // Stop listening for location
-        smsTester.unregisterReceivers() // Ensure SMS receivers are unregistered
+        handler.removeCallbacks(updateRunnable)
+        locationTracker.stopLocationUpdates()
+        smsTester.unregisterReceivers()
         Log.d("ForegroundService", "Recording stopped. Preparing to send full logs.")
-        updateNotification("Recording stopped. Tap to open app.") // Update notification status
-        // Pass 'true' to indicate that stopSelf() should be called AFTER broadcast
+        // Update notification to indicate recording has stopped
+        updateNotification("Network Monitor: Recording stopped. Tap to re-open the app.") // Changed message
         sendFullLogsToActivity(andThenStopSelf = true)
     }
 
-    /**
-     * Creates a notification channel for Android 8.0 (Oreo) and above.
-     * Required for showing notifications.
-     */
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(
                 ServiceConstants.NOTIFICATION_CHANNEL_ID,
                 ServiceConstants.NOTIFICATION_CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW // Low importance so it's less intrusive
+                NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(serviceChannel)
@@ -354,31 +323,24 @@ class ForegroundRecordingService : LifecycleService() {
 
     /**
      * Creates a NotificationCompat.Builder instance for the foreground service notification.
-     * @param contentText The text to display in the notification.
+     * This version uses BigTextStyle for longer content and removes contentIntent to make it non-clickable.
+     * @param contentText The text to display in the notification (can be long).
      * @return A NotificationCompat.Builder instance.
      */
     private fun createNotification(contentText: String): NotificationCompat.Builder {
-        val notificationIntent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        // No PendingIntent is needed for setContentIntent if we want it non-clickable
+        // The notification will just display information.
 
         return NotificationCompat.Builder(this, ServiceConstants.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Network Monitor")
+            .setContentTitle("Network Monitor Service Running") // More explicit title
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.logo) // Use your app logo or a suitable icon
-            .setContentIntent(pendingIntent)
+            .setSmallIcon(R.drawable.logo) // Ensure you have a 'logo' drawable
             .setOngoing(true) // Makes the notification non-dismissible
-            .setPriority(NotificationCompat.PRIORITY_LOW) // Consistent with channel importance
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText)) // ADDED: For longer text
+        // REMOVED: .setContentIntent(pendingIntent) to make it non-clickable
     }
 
-    /**
-     * Updates the existing foreground service notification.
-     * @param contentText The new text content for the notification.
-     */
     private fun updateNotification(contentText: String) {
         val notification = createNotification(contentText).build()
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -386,8 +348,7 @@ class ForegroundRecordingService : LifecycleService() {
     }
 
     /**
-     * Formats all recorded data from `recordedDataList` into a single string
-     * and sends it to the `MainActivity` via `LocalBroadcastManager`.
+     * Formats all recorded data and sends it to the `MainActivity`.
      * @param andThenStopSelf If true, calls stopSelf() after the broadcast is sent.
      */
     private fun sendFullLogsToActivity(andThenStopSelf: Boolean) {
@@ -457,7 +418,6 @@ class ForegroundRecordingService : LifecycleService() {
                         logBuilder.append("  Upload Rate: Not Captured\n")
                     }
 
-
                     (dataMap["cellInfo"] as? CellInfoData)?.let { cellInfoData ->
                         logBuilder.append("Cell Info:\n")
                         cellInfoData.technology?.let { logBuilder.append("  Technology: $it\n") }
@@ -481,14 +441,12 @@ class ForegroundRecordingService : LifecycleService() {
                 }
             }
 
-            // Send the full formatted log string back to MainActivity
             withContext(Dispatchers.Main) {
                 val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS)
                 intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, logBuilder.toString())
                 localBroadcastManager.sendBroadcast(intent)
                 Log.d("ForegroundService", "ACTION_RECEIVE_FULL_LOGS broadcast sent.")
 
-                // Only call stopSelf() if the flag is true
                 if (andThenStopSelf) {
                     stopSelf()
                     Log.d("ForegroundService", "Service stopping self after sending logs.")
@@ -497,23 +455,16 @@ class ForegroundRecordingService : LifecycleService() {
         }
     }
 
-    /**
-     * Called when the service is no longer used and is being destroyed.
-     */
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(updateRunnable) // Stop any pending updates
-        locationTracker.stopLocationUpdates() // Ensure location updates are stopped
-        smsTester.unregisterReceivers() // Ensure SMS receivers are unregistered
+        handler.removeCallbacks(updateRunnable)
+        locationTracker.stopLocationUpdates()
+        smsTester.unregisterReceivers()
         Log.d("ForegroundService", "Service destroyed.")
     }
 
-    /**
-     * Provides the binding mechanism for the service.
-     * In this setup, we're using startService and LocalBroadcastManager, so no direct binding is needed.
-     */
     override fun onBind(intent: Intent): IBinder? {
-        super.onBind(intent) // Important to call super.onBind for LifecycleService
-        return null // No direct binding is provided or necessary for this service's functionality
+        super.onBind(intent)
+        return null
     }
 }

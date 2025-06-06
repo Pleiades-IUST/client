@@ -42,9 +42,7 @@ data class CellInfoData(
     val nrarfcn: Int?, // NR Absolute Radio Frequency Channel Number (for 5G NR)
     val bands: List<Int>?, // List of frequency bands (for 5G NR, LTE)
     val csiRsrp_dBm: Int?, // CSI Reference Signal Received Power (for 5G NR)
-    val csiRsrq_dB: Int?, // CSI Reference Signal Received Quality (for 5G NR)
-    val rsrp_dBm: Int?, // Reference Signal Received Power (for LTE)
-    val rsrq_dB: Int?, // Reference Signal Received Quality (for LTE)
+    val csiRsrq_dB: Int?, // Reference Signal Received Quality (for LTE)
     val status: String // e.g., "OK", "Permissions Denied", "No Cell Info"
 )
 */
@@ -103,6 +101,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // HIDE THE ACTION BAR (TITLE BAR)
+        supportActionBar?.hide() // ADDED THIS LINE
+
         // Initialize UI elements
         infoTextView = findViewById(R.id.infoTextView)
         toggleButton = findViewById(R.id.toggleButton)
@@ -118,7 +119,6 @@ class MainActivity : AppCompatActivity() {
         localBroadcastManager = LocalBroadcastManager.getInstance(this)
 
         // Set initial state of checkboxes and their listeners
-        // These now simply update the UI hint. Their state will be passed to the service.
         captureDownloadRateCheckBox.isChecked = true
         capturePingTestCheckBox.isChecked = true
         captureSmsTestCheckBox.isChecked = true
@@ -160,6 +160,7 @@ class MainActivity : AppCompatActivity() {
                     updateToggleButtonState(true)
                     TransitionManager.beginDelayedTransition(rootLayout)
                     infoTextView.text = "Starting data collection service... Please wait for first live update."
+                    Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
                 } else {
                     TransitionManager.beginDelayedTransition(rootLayout)
                     infoTextView.text = "Requesting permissions... Please grant all required permissions to proceed."
@@ -190,6 +191,14 @@ class MainActivity : AppCompatActivity() {
         localBroadcastManager.unregisterReceiver(serviceDataReceiver)
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Inform user that the activity is paused but service may continue
+        if (isRecordingServiceRunning) {
+            Toast.makeText(this, "App in background, recording continues via notification.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         // No explicit stopService call here, as the service should manage its lifecycle (START_STICKY)
@@ -214,6 +223,7 @@ class MainActivity : AppCompatActivity() {
                 updateToggleButtonState(true)
                 TransitionManager.beginDelayedTransition(rootLayout)
                 infoTextView.text = "Permissions granted. Starting data collection service..."
+                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
             } else {
                 TransitionManager.beginDelayedTransition(rootLayout)
                 infoTextView.text = "Not all required permissions were granted. Cannot start service. Please grant them in app settings."
@@ -225,6 +235,7 @@ class MainActivity : AppCompatActivity() {
                 updateToggleButtonState(true)
                 TransitionManager.beginDelayedTransition(rootLayout)
                 infoTextView.text = "Notification permission granted. Starting data collection service..."
+                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
             } else {
                 Log.w("MainActivity", "POST_NOTIFICATIONS permission denied. Service might not work as expected.")
                 Toast.makeText(this, "Notification permission denied. Service might not run in foreground properly.", Toast.LENGTH_LONG).show()
@@ -254,17 +265,12 @@ class MainActivity : AppCompatActivity() {
         val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
             action = ServiceConstants.ACTION_STOP_RECORDING
         }
-        startService(serviceIntent) // Send stop command to the service
-        // The service will then send the full logs back to MainActivity and stop itself.
-        isRecordingServiceRunning = false // Update state immediately for UI responsiveness
+        startService(serviceIntent)
+        isRecordingServiceRunning = false
         Log.d("MainActivity", "Recording service STOP command sent to service.")
     }
 
-    // This method is no longer directly called by the MainActivity's STOP button.
-    // The service now handles sending the full logs on its own initiative when stopping.
     private fun requestFullLogsFromService() {
-        // This method can be kept if you want to explicitly request logs from a running service
-        // at other times, but for the STOP button, it's now service-driven.
         Log.d("MainActivity", "requestFullLogsFromService() called. Service should broadcast it.")
         val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
             action = ServiceConstants.ACTION_REQUEST_FULL_LOGS
@@ -295,8 +301,6 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Updates the initial hint text based on selected checkboxes.
-     * This method is now primarily for updating the hint text on the UI.
-     * The actual `shouldCaptureX` flags are passed to the service on start.
      */
     private fun updateInfoTextViewHint() {
         val downloadPart = if (captureDownloadRateCheckBox.isChecked) "Download" else ""
