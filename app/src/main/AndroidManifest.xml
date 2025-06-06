@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Existing Permissions (Ensure all necessary ones are here) -->
+    <!-- Existing Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -11,10 +11,7 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
-
-    <!-- FOREGROUND SERVICE PERMISSION for Android 9 (Pie) and above -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- POST_NOTIFICATIONS PERMISSION for Android 13 (Tiramisu) and above -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -26,10 +23,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Parvin_Project"
-        android:usesCleartextTraffic="true"  tools:targetApi="m"> <!-- Ensure usesCleartextTraffic="true" for HTTP tests -->
+        android:usesCleartextTraffic="true"  tools:targetApi="m">
 
+        <!-- LoginActivity is now the LAUNCHER activity -->
         <activity
-            android:name=".MainActivity"
+            android:name=".LoginActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -37,12 +35,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Declare your ForegroundRecordingService here -->
+        <!-- MainActivity is still declared but no longer the launcher -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"> <!-- Set to false as it's not launched externally -->
+        </activity>
+
+        <!-- Declare your ForegroundRecordingService -->
         <service
             android:name=".ForegroundRecordingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location|dataSync"> <!-- Indicate foreground service type for API 29+ -->
+            android:foregroundServiceType="location|dataSync">
         </service>
 
     </application>

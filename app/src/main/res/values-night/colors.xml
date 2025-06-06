@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Mode specific colors -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Custom colors for your app in Dark Mode -->
+    <color name="blue_500">#64B5F6</color> <!-- Slightly lighter blue for dark mode button -->
+    <color name="red_500">#EF5350</color>  <!-- Slightly lighter red for dark mode error -->
+    <color name="dark_gray">#B0B0B0</color> <!-- Lighter dark gray -->
+    <color name="medium_gray">#909090</color> <!-- Lighter medium gray -->
+    <color name="transparent_black_40">#66000000</color> <!-- Still useful -->
+
+    <!-- Colors for Login Screen Gradient (Dark Mode) -->
+    <color name="light_blue_gradient_start">#212121</color> <!-- Very dark gray -->
+    <color name="light_blue_gradient_end">#424242</color>   <!-- Slightly lighter dark gray -->
+
+    <!-- Text & Hint Colors (Dark Mode) -->
+    <color name="text_color_primary">@color/white</color> <!-- White text for dark mode -->
+    <color name="text_color_hint">@color/medium_gray</color>
+    <color name="edittext_background_dark">#303030</color> <!-- Dark background for EditText -->
+</resources>
