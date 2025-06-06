@@ -2,16 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- REQUIRED PERMISSIONS FOR CELLULAR INFORMATION, LOCATION, AND SMS -->
+    <!-- Existing Permissions (Ensure all necessary ones are here) -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.SEND_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
 
+    <!-- FOREGROUND SERVICE PERMISSION for Android 9 (Pie) and above -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- POST_NOTIFICATIONS PERMISSION for Android 13 (Tiramisu) and above -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -21,9 +25,9 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Parvin_project"
-        tools:targetApi="31"
-        >
+        android:theme="@style/Theme.Parvin_Project"
+        android:usesCleartextTraffic="true"  tools:targetApi="m"> <!-- Ensure usesCleartextTraffic="true" for HTTP tests -->
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -33,11 +37,13 @@
             </intent-filter>
         </activity>
 
-        <!-- IMPORTANT: Broadcast receivers for SMS status -->
-        <!-- These receivers are handled internally by SmsTester using PendingIntents,
-             and thus do NOT need to be declared here with intent-filters for SMS_SENT/DELIVERED.
-             Declaring the permissions above is sufficient for their functionality. -->
+        <!-- Declare your ForegroundRecordingService here -->
+        <service
+            android:name=".ForegroundRecordingService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location|dataSync"> <!-- Indicate foreground service type for API 29+ -->
+        </service>
 
     </application>
-
 </manifest>

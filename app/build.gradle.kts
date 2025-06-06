@@ -69,6 +69,10 @@ dependencies {
     // Lifecycle extensions (often useful, though not strictly required by this specific code)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0") // Or the latest stable version
 
+    // Add these for LifecycleService support
+    implementation("androidx.lifecycle:lifecycle-service:2.8.0") // REQUIRED for LifecycleService
+    implementation("androidx.lifecycle:lifecycle-common-java8:2.8.0") // Often needed for lifecycle-related features
+
     // Activity KTX for easier activity setup (often used with Compose, but good for general use)
     implementation("androidx.activity:activity-ktx:1.9.0") // Or the latest stable version
 
