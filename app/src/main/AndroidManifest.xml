@@ -2,16 +2,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Existing Permissions -->
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Permissions for Location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Needed for network info, cell info, and device identifiers -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- For Internet connectivity tests (download/upload/ping/DNS) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- For SMS sending/receiving tests -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
+
+    <!-- FOREGROUND SERVICE PERMISSION for Android 9 (Pie) and above -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- For Android 12 (API 31) and above, explicit foreground service types are required -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- For Android 13 (API 33) and above, explicit notification permission is required -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -23,9 +31,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Parvin_Project"
-        android:usesCleartextTraffic="true"  tools:targetApi="m">
+        android:usesCleartextTraffic="true"
+        tools:targetApi="m">
 
-        <!-- LoginActivity is now the LAUNCHER activity -->
+        <!-- LoginActivity is the LAUNCHER activity -->
         <activity
             android:name=".LoginActivity"
             android:exported="true">
@@ -35,18 +44,20 @@
             </intent-filter>
         </activity>
 
-        <!-- MainActivity is still declared but no longer the launcher -->
+        <!-- MainActivity is declared but not the launcher -->
         <activity
             android:name=".MainActivity"
-            android:exported="false"> <!-- Set to false as it's not launched externally -->
+            android:exported="false">
         </activity>
 
-        <!-- Declare your ForegroundRecordingService -->
+        <!-- Declare your ForegroundRecordingService here -->
         <service
             android:name=".ForegroundRecordingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location|dataSync">
+            android:foregroundServiceType="location|dataSync"> <!-- Essential for API 29+ -->
+            <!-- If targeting API 34+, you might also need android:permission="android.permission.BIND_FOREGROUND_SERVICE"
+                 but for a startService() pattern, it's usually managed by the system. -->
         </service>
 
     </application>

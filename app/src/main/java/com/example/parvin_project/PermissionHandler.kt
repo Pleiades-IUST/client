@@ -13,15 +13,14 @@ class PermissionHandler(private val activity: Activity, private val requestCode:
     private val appPermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.READ_PHONE_STATE,
-        // SMS permissions only needed if SMS test is enabled and used directly by app
-        // For background service, permissions are checked when service is started.
+        Manifest.permission.READ_PHONE_STATE, // CRITICAL: For CellInfoCollector and other phone state access
         Manifest.permission.SEND_SMS,
         Manifest.permission.RECEIVE_SMS,
         Manifest.permission.READ_SMS,
-        Manifest.permission.INTERNET, // INTERNET is usually granted by default, but good to include
-        Manifest.permission.ACCESS_NETWORK_STATE
-        // No need to include POST_NOTIFICATIONS here, as it's handled separately for API 33+
+        Manifest.permission.INTERNET, // Usually granted by default, but good to include for completeness
+        Manifest.permission.ACCESS_NETWORK_STATE // For network connectivity checks
+        // POST_NOTIFICATIONS is handled directly in MainActivity for API 33+
+        // FOREGROUND_SERVICE_LOCATION is a permission only declared in manifest, not requested at runtime
     )
 
     /**
