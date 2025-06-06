@@ -4,60 +4,36 @@ package com.example.parvin_project
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.ViewGroup
 import android.widget.Button
-import android.widget.TextView
 import android.widget.CheckBox
-import android.widget.CompoundButton
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.transition.TransitionManager
-import android.view.ViewGroup
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import android.content.BroadcastReceiver // Import BroadcastReceiver
-
-// IMPORTANT: Ensure these data classes are defined in a file like `data_classes.kt`
-/*
-data class LocationData(
-    val latitude: Double?,
-    val longitude: Double?,
-    val status: String // e.g., "OK", "Waiting for fix", "Providers disabled"
-)
-
-data class CellInfoData(
-    val technology: String?, // e.g., "LTE", "NR", "GSM"
-    val signalStrength_dBm: Int?, // General signal strength in dBm
-    val plmnId: String?, // Public Land Mobile Network ID (MCC+MNC)
-    val lac: Int?, // Location Area Code (for 2G/3G)
-    val cellId: Long?, // Cell Identity (for 2G/3G/4G/5G NR - using Long for NCI)
-    val pci: Int?, // Physical Cell Identity (for 4G/5G)
-    val tac: Int?, // Tracking Area Code (for 4G)
-    val nci: Long?, // NR Cell Identity (for 5G NR)
-    val nrarfcn: Int?, // NR Absolute Radio Frequency Channel Number (for 5G NR)
-    val bands: List<Int>?, // List of frequency bands (for 5G NR, LTE)
-    val csiRsrp_dBm: Int?, // CSI Reference Signal Received Power (for 5G NR)
-    val csiRsrq_dB: Int?, // Reference Signal Received Quality (for LTE)
-    val status: String // e.g., "OK", "Permissions Denied", "No Cell Info"
-)
-*/
-
-// IMPORTANT: Ensure this extension function is defined in a file like `Utils.kt`
-/*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
+import java.lang.SecurityException
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
-fun String.capitalizeWords(): String = split(" ").joinToString(" ") { word ->
-    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-}
-*/
+
+// IMPORTANT: Ensure these data classes are defined in DataModels.kt
+// IMPORTANT: Ensure the capitalizeWords() extension function is defined in a file like `Utils.kt`
 
 class MainActivity : AppCompatActivity() {
 
-    private var isRecordingServiceRunning: Boolean = false // Track service state
+    private var isRecordingActive: Boolean = false // Track if data collection is active
     private lateinit var infoTextView: TextView
     private lateinit var toggleButton: Button
     private lateinit var copyButton: Button
@@ -69,30 +45,165 @@ class MainActivity : AppCompatActivity() {
     private lateinit var captureUploadRateCheckBox: CheckBox
 
     private lateinit var permissionHandler: PermissionHandler
-    private lateinit var localBroadcastManager: LocalBroadcastManager // For receiving updates from service
 
-    private val PERMISSION_REQUEST_CODE = 101
-    private val POST_NOTIFICATIONS_REQUEST_CODE = 102 // For Android 13+ notifications
+    // Data collection components (now initialized in MainActivity)
+    private lateinit var locationTracker: LocationTracker
+    private lateinit var cellInfoCollector: CellInfoCollector
+    private lateinit var networkTester: NetworkTester
+    private lateinit var smsTester: SmsTester // This one now takes (String, Double?) -> Unit
+    private lateinit var dnsTester: DnsTester
+    private lateinit var uploadTester: UploadTester // Fixed: Removed duplicate 'lateinit var'
 
-    // BroadcastReceiver to get updates from the service
-    private val serviceDataReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                ServiceConstants.ACTION_UPDATE_UI -> {
-                    val liveData = intent.getStringExtra(ServiceConstants.EXTRA_LIVE_DATA)
-                    liveData?.let {
-                        TransitionManager.beginDelayedTransition(rootLayout)
-                        infoTextView.text = it // Directly display formatted live data
+    private val handler = Handler(Looper.getMainLooper())
+    private val UPDATE_INTERVAL_MS = 10000L // Changed to 10 seconds (10000ms)
+
+    private val recordedDataList = mutableListOf<MutableMap<String, Any?>>()
+    private var entryCount: Int = 0
+
+    // Coroutine scope for data collection (bound to MainActivity's lifecycle)
+    private val mainActivityScope = CoroutineScope(Dispatchers.Main)
+
+
+    // Runnable for periodic data collection (runs only when MainActivity is active)
+    private val updateRunnable = object : Runnable {
+        override fun run() {
+            if (!isRecordingActive) {
+                Log.d("MainActivityData", "updateRunnable: Not active, stopping further posts.")
+                return
+            }
+
+            mainActivityScope.launch(Dispatchers.IO) { // START of the IO CoroutineScope
+                val currentDataEntry = mutableMapOf<String, Any?>() // This variable is now correctly scoped within this launch block
+                val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                currentDataEntry["timestamp"] = currentTime
+
+                // --- Location Data Collection ---
+                try {
+                    currentDataEntry["location"] = locationTracker.getLocationDataForLog()
+                } catch (e: SecurityException) {
+                    Log.e("MainActivityData", "Location permission denied: ${e.message}", e)
+                    currentDataEntry["location"] = LocationData(null, null, "Permission Denied")
+                } catch (e: Exception) {
+                    Log.e("MainActivityData", "Error getting location: ${e.message}", e)
+                    currentDataEntry["location"] = LocationData(null, null, "Error: ${e.message}")
+                }
+
+                // --- Cell Info Data Collection ---
+                try {
+                    currentDataEntry["cellInfo"] = cellInfoCollector.getCellInfoData()
+                } catch (e: SecurityException) {
+                    Log.e("MainActivityData", "Cell info permission denied: ${e.message}", e)
+                    currentDataEntry["cellInfo"] = CellInfoData(
+                        null, null, null, null, null, null, null, null, null,
+                        null, null, null, null, null, "Permission Denied"
+                    )
+                } catch (e: Exception) {
+                    Log.e("MainActivityData", "Error getting cell info: ${e.message}", e)
+                    currentDataEntry["cellInfo"] = CellInfoData(
+                        null, null, null, null, null, null, null, null, null,
+                        null, null, null, null, null, "Error: ${e.message}"
+                    )
+                }
+
+                // --- Download Rate Test ---
+                var downloadRateKbps: Double? = null
+                if (captureDownloadRateCheckBox.isChecked) {
+                    try {
+                        downloadRateKbps = networkTester.performHttpDownloadTest()
+                    } catch (e: IOException) {
+                        Log.e("MainActivityData", "Download test failed: ${e.message}", e)
+                    } catch (e: Exception) {
+                        Log.e("MainActivityData", "Unexpected error during download test: ${e.message}", e)
                     }
                 }
-                ServiceConstants.ACTION_RECEIVE_FULL_LOGS -> {
-                    val fullLogs = intent.getStringExtra(ServiceConstants.EXTRA_FULL_LOGS)
-                    fullLogs?.let {
-                        TransitionManager.beginDelayedTransition(rootLayout)
-                        infoTextView.text = it // Display full formatted logs
-                        Toast.makeText(context, "Full logs loaded!", Toast.LENGTH_SHORT).show()
+                currentDataEntry["downloadRateKbps"] = downloadRateKbps
+                currentDataEntry["downloadCaptureEnabled"] = captureDownloadRateCheckBox.isChecked
+
+                // --- Ping Test ---
+                var pingResultMs: Double? = null
+                if (capturePingTestCheckBox.isChecked) {
+                    try {
+                        pingResultMs = networkTester.performPingTest()
+                    } catch (e: IOException) {
+                        Log.e("MainActivityData", "Ping test failed: ${e.message}", e)
+                    } catch (e: Exception) {
+                        Log.e("MainActivityData", "Unexpected error during ping test: ${e.message}", e)
                     }
                 }
+                currentDataEntry["pingResultMs"] = pingResultMs
+                currentDataEntry["pingCaptureEnabled"] = capturePingTestCheckBox.isChecked
+
+                // --- SMS Test ---
+                var smsDeliveryStatusForEntry: String? = null
+                currentDataEntry["smsCaptureEnabled"] = captureSmsTestCheckBox.isChecked
+                if (captureSmsTestCheckBox.isChecked) {
+                    try {
+                        if (ContextCompat.checkSelfPermission(this@MainActivity, android.Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+                            entryCount++
+                            if (entryCount == 1 || (entryCount - 1) % 10 == 0) {
+                                Log.d("MainActivityData", "Triggering SMS test (Entry $entryCount)")
+                                smsTester.sendSmsAndTrackDelivery("Test SMS from app. Entry: $entryCount, Time: $currentTime")
+                                smsDeliveryStatusForEntry = "Pending..."
+                            } else {
+                                smsDeliveryStatusForEntry = "Skipped"
+                            }
+                        } else {
+                            Log.e("MainActivityData", "SMS permission (SEND_SMS) not granted. Cannot send SMS.")
+                            smsDeliveryStatusForEntry = "Permission Denied"
+                        }
+                    } catch (e: SecurityException) {
+                        Log.e("MainActivityData", "SMS permission issue: ${e.message}", e)
+                        smsDeliveryStatusForEntry = "Permission Error"
+                    } catch (e: Exception) {
+                        Log.e("MainActivityData", "Error during SMS test: ${e.message}", e)
+                        smsDeliveryStatusForEntry = "Test Error"
+                    }
+                } else {
+                    smsDeliveryStatusForEntry = "Not Captured"
+                }
+                currentDataEntry["smsDeliveryTimeMs"] = smsDeliveryStatusForEntry
+
+
+                // --- DNS Test ---
+                var dnsLookupTimeMs: Double? = null
+                if (captureDnsTestCheckBox.isChecked) {
+                    try {
+                        dnsLookupTimeMs = dnsTester.performDnsTest()
+                    } catch (e: IOException) {
+                        Log.e("MainActivityData", "DNS test failed: ${e.message}", e)
+                    } catch (e: Exception) {
+                        Log.e("MainActivityData", "Unexpected error during DNS test: ${e.message}", e)
+                    }
+                }
+                currentDataEntry["dnsLookupTimeMs"] = dnsLookupTimeMs
+                currentDataEntry["dnsCaptureEnabled"] = captureDnsTestCheckBox.isChecked
+
+                // --- Upload Rate Test ---
+                var uploadRateKbps: Double? = null
+                if (captureUploadRateCheckBox.isChecked) {
+                    try {
+                        uploadRateKbps = uploadTester.performUploadTest()
+                    } catch (e: IOException) {
+                        Log.e("MainActivityData", "Upload test failed: ${e.message}", e)
+                    } catch (e: Exception) {
+                        Log.e("MainActivityData", "Unexpected error during upload test: ${e.message}", e)
+                    }
+                }
+                currentDataEntry["uploadRateKbps"] = uploadRateKbps
+                currentDataEntry["uploadCaptureEnabled"] = captureUploadRateCheckBox.isChecked
+
+                recordedDataList.add(currentDataEntry) // This line is now correctly inside the launch block
+                withContext(Dispatchers.Main) { // This block is also correctly inside the launch block
+                    if (isRecordingActive) { // Only update live data if recording is still active
+                        infoTextView.text = formatDataForDisplay(currentDataEntry)
+                        Log.d("MainActivityData", "Live data update to UI.")
+                    }
+                }
+            } // END of the mainActivityScope.launch(Dispatchers.IO) block
+
+            // This line is for scheduling the *next* runnable, and is outside the coroutine launch
+            if (isRecordingActive) {
+                handler.postDelayed(this, UPDATE_INTERVAL_MS)
             }
         }
     }
@@ -101,8 +212,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // HIDE THE ACTION BAR (TITLE BAR)
-        supportActionBar?.hide() // ADDED THIS LINE
+        supportActionBar?.hide() // Hide the action bar
 
         // Initialize UI elements
         infoTextView = findViewById(R.id.infoTextView)
@@ -115,8 +225,41 @@ class MainActivity : AppCompatActivity() {
         captureDnsTestCheckBox = findViewById(R.id.captureDnsTestCheckBox)
         captureUploadRateCheckBox = findViewById(R.id.captureUploadRateCheckBox)
 
-        permissionHandler = PermissionHandler(this, PERMISSION_REQUEST_CODE)
-        localBroadcastManager = LocalBroadcastManager.getInstance(this)
+        permissionHandler = PermissionHandler(this, 101) // Using 101 as the request code
+
+        // Initialize data collection components (now in MainActivity)
+        locationTracker = LocationTracker(this, UPDATE_INTERVAL_MS) { /* handled internally */ }
+        cellInfoCollector = CellInfoCollector(this)
+        networkTester = NetworkTester(this)
+        // SMS tester needs a callback that receives messageId (String) and deliveryTime (Double?)
+        smsTester = SmsTester(this) { messageId, deliveryTime ->
+            mainActivityScope.launch(Dispatchers.Main) {
+                Log.d("MainActivitySMS", "SMS callback received for Message ID: $messageId, Delivery time: $deliveryTime")
+                // Find the specific entry in recordedDataList that corresponds to this messageId.
+                // We're iterating to find the correct entry for update.
+                // It searches for any entry whose 'smsDeliveryTimeMs' is "Pending..." AND if it was the last recorded entry.
+                // This is a pragmatic approach since MainActivity doesn't store the SmsTester's internal messageId in the list.
+                val smsEntryToUpdate = recordedDataList.lastOrNull {
+                    (it["smsCaptureEnabled"] as? Boolean == true) && (it["smsDeliveryTimeMs"] == "Pending...")
+                }
+
+                smsEntryToUpdate?.let {
+                    it["smsDeliveryTimeMs"] = deliveryTime?.let { time -> String.format(Locale.getDefault(), "%.2f", time) } ?: "Failed"
+                    Log.d("MainActivitySMS", "Updated SMS status for latest pending entry to ${it["smsDeliveryTimeMs"]}")
+
+                    // If this update is for the currently displayed live data entry AND we are still recording, refresh UI
+                    if (isRecordingActive && recordedDataList.isNotEmpty() && recordedDataList.last() == it) {
+                        infoTextView.text = formatDataForDisplay(it)
+                        Log.d("MainActivitySMS", "UI updated with new SMS status.")
+                    }
+                } ?: run {
+                    Log.w("MainActivitySMS", "Could not find a pending SMS entry to update. It might have been for an older session or missed.")
+                }
+            }
+        }
+        dnsTester = DnsTester(this)
+        uploadTester = UploadTester(this)
+
 
         // Set initial state of checkboxes and their listeners
         captureDownloadRateCheckBox.isChecked = true
@@ -131,7 +274,6 @@ class MainActivity : AppCompatActivity() {
         captureDnsTestCheckBox.setOnCheckedChangeListener { _, _ -> updateInfoTextViewHint() }
         captureUploadRateCheckBox.setOnCheckedChangeListener { _, _ -> updateInfoTextViewHint() }
 
-
         // Initial UI State
         TransitionManager.beginDelayedTransition(rootLayout)
         updateInfoTextViewHint()
@@ -139,28 +281,24 @@ class MainActivity : AppCompatActivity() {
 
         // Set a click listener for the toggle button
         toggleButton.setOnClickListener {
-            if (isRecordingServiceRunning) {
-                // STOP logic: Just tell the service to stop. It will then send the full logs.
-                stopRecordingService()
+            if (isRecordingActive) {
+                // STOP logic
+                stopRecording()
                 updateToggleButtonState(false)
-                // infoTextView will be updated by the ACTION_RECEIVE_FULL_LOGS broadcast
+                // Immediately indicate logs are loading
+                infoTextView.text = "Formatting historical logs... Please wait."
+                // Display full logs after stopping
+                displayFullLogs()
             } else {
-                // START logic:
-                // Request POST_NOTIFICATIONS for Android 13+ first
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
-                        return@setOnClickListener // Exit and wait for permission result
-                    }
-                }
-
-                // Proceed with other permissions after notification permission or if not needed
+                // START logic
+                // Clear any old logs/messages from previous sessions
+                recordedDataList.clear()
+                infoTextView.text = "" // Clear UI before starting
                 if (permissionHandler.checkAndRequestPermissions()) {
-                    startRecordingService()
+                    startRecording()
                     updateToggleButtonState(true)
                     TransitionManager.beginDelayedTransition(rootLayout)
-                    infoTextView.text = "Starting data collection service... Please wait for first live update."
-                    Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
+                    infoTextView.text = "Starting data collection... Please wait for first live update."
                 } else {
                     TransitionManager.beginDelayedTransition(rootLayout)
                     infoTextView.text = "Requesting permissions... Please grant all required permissions to proceed."
@@ -177,32 +315,30 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Register BroadcastReceiver to receive updates from the service
-        val filter = IntentFilter().apply {
-            addAction(ServiceConstants.ACTION_UPDATE_UI)
-            addAction(ServiceConstants.ACTION_RECEIVE_FULL_LOGS)
+        // If recording was active when app paused, restart the runnable (e.g., app came back from background)
+        if (isRecordingActive) {
+            handler.post(updateRunnable)
         }
-        localBroadcastManager.registerReceiver(serviceDataReceiver, filter)
+        // Always register SMS receivers when the activity starts.
+        smsTester.registerReceivers()
     }
 
     override fun onStop() {
         super.onStop()
-        // Unregister BroadcastReceiver when activity is no longer visible
-        localBroadcastManager.unregisterReceiver(serviceDataReceiver)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        // Inform user that the activity is paused but service may continue
-        if (isRecordingServiceRunning) {
-            Toast.makeText(this, "App in background, recording continues via notification.", Toast.LENGTH_SHORT).show()
-        }
+        // Stop the handler when activity goes to background to prevent updates
+        handler.removeCallbacks(updateRunnable)
+        // Unregister SMS receivers when activity goes to background to prevent leaks
+        smsTester.unregisterReceivers()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // No explicit stopService call here, as the service should manage its lifecycle (START_STICKY)
-        // and ideally, the user explicitly stops it via the button.
+        // Clean up coroutine scope to prevent leaks
+        mainActivityScope.cancel()
+        // Ensure other components are stopped
+        locationTracker.stopLocationUpdates()
+        smsTester.unregisterReceivers() // Double check unregistration
+        handler.removeCallbacks(updateRunnable) // Double check removal
     }
 
     override fun onRequestPermissionsResult(
@@ -211,83 +347,134 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
+        if (requestCode == 101) { // Assuming 101 is your permission request code
             if (permissionHandler.handlePermissionsResult(requestCode, grantResults)) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
-                        return
-                    }
-                }
-                startRecordingService()
+                startRecording()
                 updateToggleButtonState(true)
                 TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Permissions granted. Starting data collection service..."
-                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
+                infoTextView.text = "Permissions granted. Starting data collection..."
             } else {
                 TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Not all required permissions were granted. Cannot start service. Please grant them in app settings."
+                infoTextView.text = "Not all required permissions were granted. Cannot start data collection. Please grant them in app settings."
                 updateToggleButtonState(false)
             }
-        } else if (requestCode == POST_NOTIFICATIONS_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startRecordingService()
-                updateToggleButtonState(true)
-                TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Notification permission granted. Starting data collection service..."
-                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
+        }
+    }
+
+    private fun startRecording() {
+        isRecordingActive = true
+        recordedDataList.clear() // Ensure list is clear for a new session
+        entryCount = 0 // Reset entry count for SMS test
+        locationTracker.startLocationUpdates() // Start location updates
+        smsTester.registerReceivers() // Ensure SMS receivers are registered on start
+        handler.post(updateRunnable) // Start the periodic updates
+        Log.d("MainActivity", "Foreground data collection started.")
+    }
+
+    private fun stopRecording() {
+        isRecordingActive = false
+        handler.removeCallbacks(updateRunnable) // Stop the periodic updates immediately
+        locationTracker.stopLocationUpdates() // Stop location updates
+        smsTester.unregisterReceivers() // Unregister SMS receivers immediately
+        Log.d("MainActivity", "Foreground data collection stopped.")
+    }
+
+    private fun displayFullLogs() {
+        mainActivityScope.launch(Dispatchers.Default) { // Use Dispatchers.Default for formatting heavy work
+            val logBuilder = StringBuilder()
+            if (recordedDataList.isEmpty()) {
+                logBuilder.append("No data was recorded during the last session.")
+                Log.w("MainActivity", "recordedDataList is empty for full logs.")
             } else {
-                Log.w("MainActivity", "POST_NOTIFICATIONS permission denied. Service might not work as expected.")
-                Toast.makeText(this, "Notification permission denied. Service might not run in foreground properly.", Toast.LENGTH_LONG).show()
-                startRecordingService()
-                updateToggleButtonState(true)
+                logBuilder.append("--- RECORDED SESSION LOGS (${recordedDataList.size} entries) ---\n\n")
+                recordedDataList.forEachIndexed { index, dataMap ->
+                    logBuilder.append("--- Entry ${index + 1} ---\n")
+                    (dataMap["timestamp"] as? String)?.let { logBuilder.append("Timestamp: $it\n") }
+
+                    (dataMap["location"] as? LocationData)?.let { locationData ->
+                        logBuilder.append("Location:\n")
+                        if (locationData.latitude != null && locationData.longitude != null) {
+                            logBuilder.append("  Latitude: ${String.format("%.6f", locationData.latitude)}, Longitude: ${String.format("%.6f", locationData.longitude)}\n")
+                        } else {
+                            logBuilder.append("  Status: ${locationData.status}\n")
+                        }
+                    }
+
+                    val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean ?: false
+                    if (downloadCaptureEnabled) {
+                        (dataMap["downloadRateKbps"] as? Double)?.let { rate ->
+                            logBuilder.append("  Download Rate: ${String.format(Locale.getDefault(), "%.2f", rate)} KB/s\n")
+                        } ?: logBuilder.append("  Download Rate: N/A\n")
+                    } else {
+                        logBuilder.append("  Download Rate: Not Captured\n")
+                    }
+
+                    val pingCaptureEnabled = dataMap["pingCaptureEnabled"] as? Boolean ?: false
+                    if (pingCaptureEnabled) {
+                        (dataMap["pingResultMs"] as? Double)?.let { ping ->
+                            logBuilder.append("  Ping Result: ${String.format(Locale.getDefault(), "%.2f", ping)} ms\n")
+                        } ?: logBuilder.append("  Ping Result: N/A\n")
+                    } else {
+                        logBuilder.append("  Ping Result: Not Captured\n")
+                    }
+
+                    val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean ?: false
+                    if (smsCaptureEnabled) {
+                        // The smsDeliveryTimeMs will be updated by the SMS callback directly into recordedDataList
+                        (dataMap["smsDeliveryTimeMs"] as? String)?.let { smsResult ->
+                            logBuilder.append("  SMS Delivery Time: $smsResult\n")
+                        } ?: logBuilder.append("  SMS Delivery Time: N/A\n")
+                    } else {
+                        logBuilder.append("  SMS Delivery Time: Not Captured\n")
+                    }
+
+                    val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean ?: false
+                    if (dnsCaptureEnabled) {
+                        (dataMap["dnsLookupTimeMs"] as? Double)?.let { dns ->
+                            logBuilder.append("  DNS Lookup Time: ${String.format(Locale.getDefault(), "%.2f", dns)} ms\n")
+                        } ?: logBuilder.append("  DNS Lookup Time: N/A\n")
+                    } else {
+                        logBuilder.append("  DNS Lookup Time: Not Captured\n")
+                    }
+
+                    val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean ?: false
+                    if (uploadCaptureEnabled) {
+                        (dataMap["uploadRateKbps"] as? Double)?.let { upload ->
+                            logBuilder.append("  Upload Rate: ${String.format(Locale.getDefault(), "%.2f", upload)} KB/s\n")
+                        } ?: logBuilder.append("  Upload Rate: N/A\n")
+                    } else {
+                        logBuilder.append("  Upload Rate: Not Captured\n")
+                    }
+
+                    (dataMap["cellInfo"] as? CellInfoData)?.let { cellInfoData ->
+                        logBuilder.append("Cell Info:\n")
+                        cellInfoData.technology?.let { logBuilder.append("  Technology: $it\n") }
+                        cellInfoData.signalStrength_dBm?.let { logBuilder.append("  Signal: $it dBm\n") }
+                        cellInfoData.plmnId?.let { logBuilder.append("  PLMN-ID: $it\n") }
+                        cellInfoData.lac?.let { logBuilder.append("  LAC: $it\n") }
+                        cellInfoData.cellId?.let { logBuilder.append("  Cell ID: ${it}\n") }
+                        cellInfoData.rsrp_dBm?.let { logBuilder.append("  RSRP: $it dBm\n") }
+                        cellInfoData.rsrq_dB?.let { logBuilder.append("  RSRQ: $it dB\n") }
+                        cellInfoData.pci?.let { logBuilder.append("  PCI: $it\n") }
+                        cellInfoData.tac?.let { logBuilder.append("  TAC: $it\n") }
+                        cellInfoData.nci?.let { logBuilder.append("  NCI: ${it}\n") }
+                        cellInfoData.nrarfcn?.let { logBuilder.append("  NR-ARFCN: $it\n") }
+                        cellInfoData.bands?.let { bands -> if (bands.isNotEmpty()) logBuilder.append("  Bands: ${bands.joinToString(", ")}\n") }
+                        cellInfoData.csiRsrp_dBm?.let { logBuilder.append("  CSI-RSRP: $it dBm\n") }
+                        cellInfoData.csiRsrq_dB?.let { logBuilder.append("  CSI-RSRQ: $it dB\n") }
+                        cellInfoData.status?.let { status -> logBuilder.append("  Status: $status\n") }
+                    } ?: logBuilder.append("  Cell Info Status: N/A\n")
+                    logBuilder.append("\n")
+                }
+            }
+            withContext(Dispatchers.Main) {
                 TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Attempting to start service without notification permission. Check device settings if service fails."
+                infoTextView.text = logBuilder.toString()
+                Toast.makeText(this@MainActivity, "Full logs loaded!", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    private fun startRecordingService() {
-        val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
-            action = ServiceConstants.ACTION_START_RECORDING
-            putExtra("shouldCaptureDownloadRate", captureDownloadRateCheckBox.isChecked)
-            putExtra("shouldCapturePingTest", capturePingTestCheckBox.isChecked)
-            putExtra("shouldCaptureSmsTest", captureSmsTestCheckBox.isChecked)
-            putExtra("shouldCaptureDnsTest", captureDnsTestCheckBox.isChecked)
-            putExtra("shouldCaptureUploadRate", captureUploadRateCheckBox.isChecked)
-        }
-        ContextCompat.startForegroundService(this, serviceIntent)
-        isRecordingServiceRunning = true
-        Log.d("MainActivity", "Recording service START command sent.")
-    }
-
-    private fun stopRecordingService() {
-        val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
-            action = ServiceConstants.ACTION_STOP_RECORDING
-        }
-        startService(serviceIntent)
-        isRecordingServiceRunning = false
-        Log.d("MainActivity", "Recording service STOP command sent to service.")
-    }
-
-    private fun requestFullLogsFromService() {
-        Log.d("MainActivity", "requestFullLogsFromService() called. Service should broadcast it.")
-        val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
-            action = ServiceConstants.ACTION_REQUEST_FULL_LOGS
-        }
-        startService(serviceIntent)
-    }
-
-    private fun updateToggleButtonState(isServiceRunning: Boolean) {
-        if (isServiceRunning) {
-            toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.red_500))
-            toggleButton.text = "STOP (Recording)"
-        } else {
-            toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
-            toggleButton.text = "START"
-        }
-        this.isRecordingServiceRunning = isServiceRunning
-    }
 
     /**
      * Helper function to copy text to the clipboard.
@@ -312,5 +499,86 @@ class MainActivity : AppCompatActivity() {
 
         infoTextView.text = "Press START to begin recording network, cell, and location data.\n" +
                 "Network tests to capture: ${networkTests.ifEmpty { "None" }}."
+    }
+
+    private fun updateToggleButtonState(isActive: Boolean) {
+        if (isActive) {
+            toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.red_500))
+            toggleButton.text = "STOP (Recording)"
+        } else {
+            toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.blue_500))
+            toggleButton.text = "START"
+        }
+        this.isRecordingActive = isActive
+    }
+
+    // Helper function to format data for display (can be simplified if needed)
+    private fun formatDataForDisplay(dataMap: MutableMap<String, Any?>): String {
+        val displayString = StringBuilder()
+        displayString.append("--- Live Data: ${dataMap["timestamp"] as? String ?: "N/A"} ---\n")
+
+        val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean ?: false
+        displayString.append("  Download: ")
+        if (downloadCaptureEnabled) {
+            (dataMap["downloadRateKbps"] as? Double)?.let { rate ->
+                displayString.append("${String.format(Locale.getDefault(), "%.2f", rate)} KB/s\n")
+            } ?: displayString.append("Failed or N/A\n")
+        } else {
+            displayString.append("Not captured\n")
+        }
+
+        val pingCaptureEnabled = dataMap["pingCaptureEnabled"] as? Boolean ?: false
+        displayString.append("  Ping: ")
+        if (pingCaptureEnabled) {
+            (dataMap["pingResultMs"] as? Double)?.let { ping ->
+                displayString.append("${String.format(Locale.getDefault(), "%.2f", ping)} ms\n")
+            } ?: displayString.append("Failed or N/A\n")
+        } else {
+            displayString.append("Not captured\n")
+        }
+
+        val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean ?: false
+        displayString.append("  SMS: ")
+        if (smsCaptureEnabled) {
+            displayString.append("${dataMap["smsDeliveryTimeMs"] ?: "N/A"}\n")
+        } else {
+            displayString.append("Not captured\n")
+        }
+
+        val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean ?: false
+        displayString.append("  DNS Lookup: ")
+        if (dnsCaptureEnabled) {
+            (dataMap["dnsLookupTimeMs"] as? Double)?.let { dns ->
+                displayString.append("${String.format(Locale.getDefault(), "%.2f", dns)} ms\n")
+            } ?: displayString.append("Failed or N/A\n")
+        } else {
+            displayString.append("Not captured\n")
+        }
+
+        val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean ?: false
+        displayString.append("  Upload: ")
+        if (uploadCaptureEnabled) {
+            (dataMap["uploadRateKbps"] as? Double)?.let { upload ->
+                displayString.append("${String.format(Locale.getDefault(), "%.2f", upload)} KB/s\n")
+            } ?: displayString.append("Failed or N/A\n")
+        } else {
+            displayString.append("Not captured\n")
+        }
+
+        val locationData = dataMap["location"] as? LocationData
+        if (locationData != null && locationData.latitude != null) {
+            displayString.append("  Location: Fixed (Lat: ${String.format("%.6f", locationData.latitude)}, Long: ${String.format("%.6f", locationData.longitude)})\n")
+        } else {
+            displayString.append("  Location: ${locationData?.status ?: "N/A"}\n")
+        }
+
+        val cellInfoData = dataMap["cellInfo"] as? CellInfoData
+        if (cellInfoData != null && cellInfoData.technology != null) {
+            displayString.append("  Cell Tech: ${cellInfoData.technology ?: "N/A"}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
+        } else {
+            displayString.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
+        }
+
+        return displayString.toString()
     }
 }

@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build // Import Build class
 import android.telephony.SmsManager
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap // To safely store send times
@@ -19,16 +20,16 @@ import java.util.concurrent.ConcurrentHashMap // To safely store send times
  * is a number you control for testing purposes.
  *
  * @param context The application context (ideally Activity context for BroadcastReceiver registration).
- * @param onSmsDeliveryResult A callback function to receive the delivery time in milliseconds.
+ * @param onSmsDeliveryResult A callback function to receive the messageId and delivery time in milliseconds.
  */
-class SmsTester(private val context: Context, private val onSmsDeliveryResult: (Double?) -> Unit) {
+class SmsTester(private val context: Context, private val onSmsDeliveryResult: (messageId: String, deliveryTimeMs: Double?) -> Unit) { // Callback includes messageId
 
     // IMPORTANT: Replace with a valid phone number you control for testing.
-    // Sending SMS can incur charges. 
-    private val RECIPIENT_PHONE_NUMBER = "+989124904530"
+    // Sending SMS can incur charges.
+    private val RECIPIENT_PHONE_NUMBER = "+989124904530" // Using +989124904530 as the common emulator/test number. Adjust if needed.
 
-    private val SENT_SMS_ACTION = "SMS_SENT_ACTION"
-    private val DELIVERED_SMS_ACTION = "SMS_DELIVERED_ACTION"
+    private val SENT_SMS_ACTION = "SMS_SENT_ACTION_PARVIN" // Made action unique to avoid conflicts
+    private val DELIVERED_SMS_ACTION = "SMS_DELIVERED_ACTION_PARVIN" // Made action unique
     private val SMS_MESSAGE_ID_EXTRA = "sms_message_id"
 
     // Map to store the send time (nanoTime) of each message, keyed by its unique ID
@@ -38,6 +39,8 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
     private val smsSentReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val messageId = intent?.getStringExtra(SMS_MESSAGE_ID_EXTRA) ?: return
+            val resultCode = resultCode
+
             when (resultCode) {
                 Activity.RESULT_OK -> Log.d("SmsTester", "SMS with ID $messageId sent successfully by device.")
                 SmsManager.RESULT_ERROR_GENERIC_FAILURE -> Log.e("SmsTester", "SMS with ID $messageId generic failure (check signal, balance, etc.).")
@@ -49,7 +52,7 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
             // If SENT fails, immediately inform MainActivity that delivery failed
             if (resultCode != Activity.RESULT_OK) {
                 sentMessageTimestamps.remove(messageId) // Clean up pending entry
-                onSmsDeliveryResult(null) // Report failure to UI
+                onSmsDeliveryResult(messageId, null) // Corrected: Call onSmsDeliveryResult
             }
         }
     }
@@ -61,6 +64,7 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
             val sendTimeNs = sentMessageTimestamps.remove(messageId) // Remove after processing
             if (sendTimeNs == null) {
                 Log.w("SmsTester", "Delivery report for unknown SMS ID: $messageId. Or sent time missing.")
+                onSmsDeliveryResult(messageId, null) // Still report failure if no sendTime, use messageId
                 return
             }
 
@@ -68,14 +72,16 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
             val durationNs = deliveryTimeNs - sendTimeNs
             val durationMs = durationNs / 1_000_000.0 // Convert nanoseconds to milliseconds
 
+            val resultCode = resultCode // This is a member of BroadcastReceiver
+
             when (resultCode) {
                 Activity.RESULT_OK -> {
                     Log.d("SmsTester", "SMS with ID $messageId delivered successfully in ${String.format("%.2f", durationMs)} ms.")
-                    onSmsDeliveryResult(durationMs)
+                    onSmsDeliveryResult(messageId, durationMs) // Corrected: Call onSmsDeliveryResult
                 }
                 else -> {
                     Log.e("SmsTester", "SMS with ID $messageId delivery failed. Result code: $resultCode. Took ${String.format("%.2f", durationMs)} ms until failed status.")
-                    onSmsDeliveryResult(null) // Indicate failure
+                    onSmsDeliveryResult(messageId, null) // Corrected: Call onSmsDeliveryResult, indicate failure
                 }
             }
         }
@@ -115,27 +121,26 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
      * @param message The content of the SMS message.
      */
     fun sendSmsAndTrackDelivery(message: String) {
-        // Basic validation for recipient number
-        if (RECIPIENT_PHONE_NUMBER == "YOUR_RECIPIENT_PHONE_NUMBER" || RECIPIENT_PHONE_NUMBER.isBlank() || !RECIPIENT_PHONE_NUMBER.startsWith("+")) {
-            Log.e("SmsTester", "RECIPIENT_PHONE_NUMBER not set or invalid in SmsTester.kt. Please update it with a valid international format (e.g., +447911123456). SMS NOT SENT.")
-            onSmsDeliveryResult(null) // Immediately report failure
+        if (RECIPIENT_PHONE_NUMBER.isBlank() || (!RECIPIENT_PHONE_NUMBER.startsWith("+") && RECIPIENT_PHONE_NUMBER != "+989124904530")) {
+            Log.e("SmsTester", "RECIPIENT_PHONE_NUMBER not set or invalid in SmsTester.kt. Please update it with a valid international format (e.g., +447911123456) or '+989124904530' for emulator. SMS NOT SENT.")
+            onSmsDeliveryResult("INVALID_NUMBER", null) // Report failure with a dummy ID
             return
         }
 
-        // --- ADDED NULL CHECK HERE ---
-        // val smsManager = context.getSystemService(SmsManager::class.java)
-        val smsManager = SmsManager.getDefault()
+        val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(SmsManager::class.java)
+        } else {
+            SmsManager.getDefault()
+        }
+
         if (smsManager == null) {
             Log.e("SmsTester", "SmsManager is NULL. Device likely does not support telephony (e.g., Wi-Fi tablet or emulator without phone features). SMS NOT SENT.")
-            onSmsDeliveryResult(null) // Report failure
+            onSmsDeliveryResult("SMS_MANAGER_NULL", null) // Report failure
             return
         }
-        // --- END ADDED NULL CHECK ---
 
-        // Generate a unique ID for this message to track it through PendingIntents
-        val messageId = System.currentTimeMillis().toString() + "_" + (0..999).random()
+        val messageId = System.currentTimeMillis().toString() + "_" + (0..999).random() // Unique ID for this message
 
-        // Create Intents for broadcast receivers
         val sentIntent = Intent(SENT_SMS_ACTION).apply {
             putExtra(SMS_MESSAGE_ID_EXTRA, messageId)
         }
@@ -143,18 +148,20 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
             putExtra(SMS_MESSAGE_ID_EXTRA, messageId)
         }
 
-        // Create PendingIntents with unique request codes for each message
+        // FLAG_IMMUTABLE is required for Android 12+ (API 31+). FLAG_UPDATE_CURRENT for updating extras.
+        val pendingFlags = PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+
         val sentPI: PendingIntent = PendingIntent.getBroadcast(
             context,
             messageId.hashCode(), // Use hashcode as request code (needs to be unique per PendingIntent)
             sentIntent,
-            PendingIntent.FLAG_IMMUTABLE // Required for Android 12+ (API 31+)
+            pendingFlags
         )
         val deliveredPI: PendingIntent = PendingIntent.getBroadcast(
             context,
             messageId.hashCode() + 1, // Ensure different request code for delivered PI
             deliveredIntent,
-            PendingIntent.FLAG_IMMUTABLE // Required for Android 12+ (API 31+)
+            pendingFlags
         )
 
         sentMessageTimestamps[messageId] = System.nanoTime() // Record the precise time SMS was sent
@@ -171,15 +178,15 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
         } catch (e: SecurityException) {
             Log.e("SmsTester", "SecurityException: SMS permission not granted or revoked. Ensure SEND_SMS is granted. ${e.message}", e)
             sentMessageTimestamps.remove(messageId) // Clean up
-            onSmsDeliveryResult(null) // Report failure
+            onSmsDeliveryResult(messageId, null) // Report failure
         } catch (e: IllegalArgumentException) {
             Log.e("SmsTester", "IllegalArgumentException: Invalid phone number format or message. ${e.message}", e)
             sentMessageTimestamps.remove(messageId) // Clean up
-            onSmsDeliveryResult(null) // Report failure
+            onSmsDeliveryResult(messageId, null) // Report failure
         } catch (e: Exception) {
             Log.e("SmsTester", "General Exception during SMS sending for ID $messageId: ${e.message}", e)
             sentMessageTimestamps.remove(messageId) // Clean up
-            onSmsDeliveryResult(null) // Report failure
+            onSmsDeliveryResult(messageId, null) // Report failure
         }
     }
 }

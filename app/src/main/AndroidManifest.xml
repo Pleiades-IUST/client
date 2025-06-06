@@ -15,12 +15,9 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
 
-    <!-- FOREGROUND SERVICE PERMISSION for Android 9 (Pie) and above -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- For Android 12 (API 31) and above, explicit foreground service types are required -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <!-- For Android 13 (API 33) and above, explicit notification permission is required -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- REMOVED: android.permission.FOREGROUND_SERVICE -->
+    <!-- REMOVED: android.permission.FOREGROUND_SERVICE_LOCATION -->
+    <!-- REMOVED: android.permission.POST_NOTIFICATIONS -->
 
     <application
         android:allowBackup="true"
@@ -50,15 +47,7 @@
             android:exported="false">
         </activity>
 
-        <!-- Declare your ForegroundRecordingService here -->
-        <service
-            android:name=".ForegroundRecordingService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="location|dataSync"> <!-- Essential for API 29+ -->
-            <!-- If targeting API 34+, you might also need android:permission="android.permission.BIND_FOREGROUND_SERVICE"
-                 but for a startService() pattern, it's usually managed by the system. -->
-        </service>
+        <!-- REMOVED: Service declaration for ForegroundRecordingService -->
 
     </application>
 </manifest>

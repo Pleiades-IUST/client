@@ -13,14 +13,14 @@ class PermissionHandler(private val activity: Activity, private val requestCode:
     private val appPermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.READ_PHONE_STATE, // CRITICAL: For CellInfoCollector and other phone state access
+        Manifest.permission.READ_PHONE_STATE, // For CellInfoCollector and other phone state access
         Manifest.permission.SEND_SMS,
         Manifest.permission.RECEIVE_SMS,
         Manifest.permission.READ_SMS,
         Manifest.permission.INTERNET, // Usually granted by default, but good to include for completeness
         Manifest.permission.ACCESS_NETWORK_STATE // For network connectivity checks
-        // POST_NOTIFICATIONS is handled directly in MainActivity for API 33+
-        // FOREGROUND_SERVICE_LOCATION is a permission only declared in manifest, not requested at runtime
+        // REMOVED: Manifest.permission.POST_NOTIFICATIONS
+        // REMOVED: android.permission.FOREGROUND_SERVICE_LOCATION (this was never here but for clarity)
     )
 
     /**
