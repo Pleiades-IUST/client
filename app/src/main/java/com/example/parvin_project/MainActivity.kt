@@ -284,11 +284,15 @@ class MainActivity : AppCompatActivity() {
         toggleButton.setOnClickListener {
             if (isRecordingActive) {
                 // STOP logic
+                val stopIntent = Intent(this, ForegroundRecordingService::class.java).apply {
+                action = "com.example.parvin_project.ACTION_STOP_RECORDING"
+                }
+                ContextCompat.startForegroundService(this, stopIntent)
+
+                // 2) Clean up the Activity UI and handlers
                 stopRecording()
                 updateToggleButtonState(false)
-                // Immediately indicate logs are loading
                 infoTextView.text = "Formatting historical logs... Please wait."
-                // Display full logs after stopping
                 displayFullLogs()
             } else {
                 // START logic
