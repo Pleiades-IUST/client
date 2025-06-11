@@ -4,6 +4,7 @@ package com.example.parvin_project
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
@@ -52,7 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var networkTester: NetworkTester
     private lateinit var smsTester: SmsTester // This one now takes (String, Double?) -> Unit
     private lateinit var dnsTester: DnsTester
-    private lateinit var uploadTester: UploadTester // Fixed: Removed duplicate 'lateinit var'
+    private lateinit var uploadTester: UploadTester
 
     private val handler = Handler(Looper.getMainLooper())
     private val UPDATE_INTERVAL_MS = 10000L // Changed to 10 seconds (10000ms)
@@ -295,7 +296,14 @@ class MainActivity : AppCompatActivity() {
                 recordedDataList.clear()
                 infoTextView.text = "" // Clear UI before starting
                 if (permissionHandler.checkAndRequestPermissions()) {
-                    startRecording()
+                    // Start the ForegroundRecordingService
+                    val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
+                        action = "com.example.parvin_project.ACTION_START_RECORDING"
+                        // You could add extras here for which tests to run in background
+                    }
+                    ContextCompat.startForegroundService(this, serviceIntent)
+
+                    startRecording() // Keep UI-related recording state in MainActivity
                     updateToggleButtonState(true)
                     TransitionManager.beginDelayedTransition(rootLayout)
                     infoTextView.text = "Starting data collection... Please wait for first live update."
@@ -333,6 +341,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // Send stop command to ForegroundRecordingService when MainActivity is destroyed
+        val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
+            action = "com.example.parvin_project.ACTION_STOP_RECORDING"
+        }
+        stopService(serviceIntent)
+
         // Clean up coroutine scope to prevent leaks
         mainActivityScope.cancel()
         // Ensure other components are stopped
@@ -349,6 +363,12 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 101) { // Assuming 101 is your permission request code
             if (permissionHandler.handlePermissionsResult(requestCode, grantResults)) {
+                // If permissions are granted, start the service and recording
+                val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
+                    action = "com.example.parvin_project.ACTION_START_RECORDING"
+                }
+                ContextCompat.startForegroundService(this, serviceIntent)
+
                 startRecording()
                 updateToggleButtonState(true)
                 TransitionManager.beginDelayedTransition(rootLayout)
@@ -420,7 +440,6 @@ class MainActivity : AppCompatActivity() {
 
                     val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean ?: false
                     if (smsCaptureEnabled) {
-                        // The smsDeliveryTimeMs will be updated by the SMS callback directly into recordedDataList
                         (dataMap["smsDeliveryTimeMs"] as? String)?.let { smsResult ->
                             logBuilder.append("  SMS Delivery Time: $smsResult\n")
                         } ?: logBuilder.append("  SMS Delivery Time: N/A\n")
@@ -498,7 +517,7 @@ class MainActivity : AppCompatActivity() {
         val networkTests = listOf(downloadPart, pingPart, smsPart, dnsPart, uploadPart).filter { it.isNotEmpty() }.joinToString(" & ")
 
         infoTextView.text = "Press START to begin recording network, cell, and location data.\n" +
-                "Network tests to capture: ${networkTests.ifEmpty { "None" }}."
+                            "Network tests to capture: ${networkTests.ifEmpty { "None" }}."
     }
 
     private fun updateToggleButtonState(isActive: Boolean) {

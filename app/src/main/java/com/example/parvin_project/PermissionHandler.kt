@@ -4,62 +4,63 @@ package com.example.parvin_project
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 class PermissionHandler(private val activity: Activity, private val requestCode: Int) {
 
-    // Define all permissions your app might need here
-    private val appPermissions = arrayOf(
+    private val requiredPermissions = mutableListOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.READ_PHONE_STATE, // For CellInfoCollector and other phone state access
         Manifest.permission.SEND_SMS,
         Manifest.permission.RECEIVE_SMS,
         Manifest.permission.READ_SMS,
-        Manifest.permission.INTERNET, // Usually granted by default, but good to include for completeness
-        Manifest.permission.ACCESS_NETWORK_STATE // For network connectivity checks
-        // REMOVED: Manifest.permission.POST_NOTIFICATIONS
-        // REMOVED: android.permission.FOREGROUND_SERVICE_LOCATION (this was never here but for clarity)
-    )
-
-    /**
-     * Checks if all required permissions are granted.
-     * @return true if all permissions are granted, false otherwise.
-     */
-    fun checkPermissionsWithoutRequest(): Boolean {
-        return appPermissions.all {
-            ContextCompat.checkSelfPermission(activity, it) == PackageManager.PERMISSION_GRANTED
+        Manifest.permission.READ_PHONE_STATE,
+        // Manifest.permission.READ_CELL_BROADCASTS is not a standard dangerous permission, removed from here.
+        Manifest.permission.INTERNET, // Considered normal, usually granted by default if manifest-only
+        Manifest.permission.ACCESS_NETWORK_STATE, // Considered normal
+        Manifest.permission.ACCESS_WIFI_STATE, // Considered normal
+        Manifest.permission.POST_NOTIFICATIONS // For Android 13+ (API 33) notifications
+    ).apply {
+        // Add FOREGROUND_SERVICE_LOCATION for Android 14+ (API 34) if targeting it
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // API 34
+            add(Manifest.permission.FOREGROUND_SERVICE_LOCATION)
         }
-    }
+    }.toTypedArray()
+
 
     /**
-     * Checks if all required permissions are granted, and requests them if not.
-     * @return true if all permissions are currently granted, false if request was made.
+     * Checks if all required permissions are granted. If not, requests them.
+     * @return true if all permissions are already granted, false otherwise.
      */
     fun checkAndRequestPermissions(): Boolean {
-        val permissionsToRequest = appPermissions.filter {
+        val permissionsToRequest = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
-        }.toTypedArray()
+        }
 
         if (permissionsToRequest.isNotEmpty()) {
-            ActivityCompat.requestPermissions(activity, permissionsToRequest, requestCode)
-            return false // Permissions were requested, not all are granted yet
+            ActivityCompat.requestPermissions(
+                activity,
+                permissionsToRequest.toTypedArray(),
+                requestCode
+            )
+            return false // Permissions were requested
         }
         return true // All permissions already granted
     }
 
     /**
-     * Handles the result of a permission request.
-     * Call this from your Activity's onRequestPermissionsResult method.
-     * @param requestCode The request code passed to requestPermissions.
+     * Handles the result of the permission request.
+     * @param requestCode The request code passed in checkAndRequestPermissions.
      * @param grantResults The grant results for the corresponding permissions.
-     * @return true if all permissions for this handler's request code are granted, false otherwise.
+     * @return true if all permissions were granted, false otherwise.
      */
     fun handlePermissionsResult(requestCode: Int, grantResults: IntArray): Boolean {
         if (requestCode == this.requestCode) {
-            return grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            return allGranted
         }
-        return false // Not our request code
+        return false
     }
 }
