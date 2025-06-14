@@ -73,7 +73,7 @@ class LoginActivity : AppCompatActivity() {
                         val loginResponse = response.body()
                         if (loginResponse != null) {
                             // Login successful, save tokens
-                            TokenManager.saveTokens(loginResponse.access_token, loginResponse.token_type)
+                            TokenManager.saveTokens(loginResponse.token)
                             Log.d("LoginActivity", "Login successful! Token saved.")
                             Toast.makeText(this@LoginActivity, "ورود موفقیت‌آمیز بود.", Toast.LENGTH_SHORT).show()
                             navigateToMainActivity()

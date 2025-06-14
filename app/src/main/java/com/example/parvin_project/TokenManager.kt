@@ -21,14 +21,14 @@ object TokenManager {
         }
     }
 
-    fun saveTokens(accessToken: String, tokenType: String) {
+    fun saveTokens(accessToken: String) {
         if (!this::sharedPreferences.isInitialized) {
             Log.e("TokenManager", "TokenManager not initialized. Call initialize(context) first!")
             return
         }
         with(sharedPreferences.edit()) {
             putString(ACCESS_TOKEN_KEY, accessToken)
-            putString(TOKEN_TYPE_KEY, tokenType)
+            putString(TOKEN_TYPE_KEY, "bearer")
             apply() // Apply asynchronously
         }
         Log.d("TokenManager", "Access token saved.")
