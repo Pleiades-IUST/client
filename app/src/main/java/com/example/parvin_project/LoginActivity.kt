@@ -14,7 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import retrofit2.HttpException // Add this import
+import retrofit2.HttpException
 
 class LoginActivity : AppCompatActivity() {
 
@@ -26,6 +26,17 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
+
+        // Initialize TokenManager here, before any API calls or token checks
+        // This ensures SharedPreferences is ready.
+        RetrofitClient.initialize(applicationContext) // Initialize TokenManager through RetrofitClient
+
+        // Check if a token already exists
+        if (TokenManager.hasAccessToken()) {
+            Log.d("LoginActivity", "Access token found. Bypassing login.")
+            navigateToMainActivity()
+            return // Prevent further execution of onCreate
+        }
 
         usernameEditText = findViewById(R.id.usernameEditText)
         passwordEditText = findViewById(R.id.passwordEditText)
@@ -47,9 +58,8 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
-        // Disable button to prevent multiple clicks during login attempt
         loginButton.isEnabled = false
-        errorTextView.visibility = View.GONE // Hide previous errors
+        errorTextView.visibility = View.GONE
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -60,41 +70,48 @@ class LoginActivity : AppCompatActivity() {
                     loginButton.isEnabled = true // Re-enable button
 
                     if (response.isSuccessful) {
-                        // Login successful (200 OK)
-                        Log.d("LoginActivity", "Login successful!")
-                        Toast.makeText(this@LoginActivity, "ورود موفقیت‌آمیز بود.", Toast.LENGTH_SHORT).show()
-                        val intent = Intent(this@LoginActivity, MainActivity::class.java)
-                        startActivity(intent)
-                        finish() // Close LoginActivity
+                        val loginResponse = response.body()
+                        if (loginResponse != null) {
+                            // Login successful, save tokens
+                            TokenManager.saveTokens(loginResponse.access_token, loginResponse.token_type)
+                            Log.d("LoginActivity", "Login successful! Token saved.")
+                            Toast.makeText(this@LoginActivity, "ورود موفقیت‌آمیز بود.", Toast.LENGTH_SHORT).show()
+                            navigateToMainActivity()
+                        } else {
+                            // Should not happen if 200 OK is received with a body
+                            errorTextView.text = "خطا: پاسخ سرور نامعتبر است."
+                            errorTextView.visibility = View.VISIBLE
+                            Log.e("LoginActivity", "Login successful but response body is null.")
+                        }
                     } else {
                         // Login failed with an HTTP error
                         Log.e("LoginActivity", "Login failed. Code: ${response.code()}, Message: ${response.message()}")
-                        if (response.code() == 422) {
-                            errorTextView.text = "نام کاربری یا رمز عبور اشتباه است."
-                            errorTextView.visibility = View.VISIBLE
-                        } else {
-                            // Handle other error codes if necessary
-                            errorTextView.text = "خطا در ورود: ${response.code()} ${response.message()}"
-                            errorTextView.visibility = View.VISIBLE
-                        }
+                        // As per requirement, show "نام کاربری یا رمز عبور اشتباه است." for any non-200 response
+                        errorTextView.text = "نام کاربری یا رمز عبور اشتباه است."
+                        errorTextView.visibility = View.VISIBLE
                     }
                 }
             } catch (e: HttpException) {
                 withContext(Dispatchers.Main) {
-                    loginButton.isEnabled = true // Re-enable button
+                    loginButton.isEnabled = true
                     Log.e("LoginActivity", "HTTP Exception during login: ${e.message()}", e)
-                    // You can parse e.response()?.errorBody()?.string() for more detailed error from server if needed
-                    errorTextView.text = "خطای شبکه: ${e.code()} ${e.message()}"
+                    errorTextView.text = "نام کاربری یا رمز عبور اشتباه است." // Also show this for HTTP exceptions
                     errorTextView.visibility = View.VISIBLE
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    loginButton.isEnabled = true // Re-enable button
+                    loginButton.isEnabled = true
                     Log.e("LoginActivity", "Error during login: ${e.message}", e)
                     errorTextView.text = "خطا در اتصال به سرور. لطفا اتصال اینترنت را بررسی کنید."
                     errorTextView.visibility = View.VISIBLE
                 }
             }
         }
+    }
+
+    private fun navigateToMainActivity() {
+        val intent = Intent(this, MainActivity::class.java)
+        startActivity(intent)
+        finish() // Close LoginActivity so user can't go back to it via back button
     }
 }
