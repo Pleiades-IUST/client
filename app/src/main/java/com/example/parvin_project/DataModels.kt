@@ -102,7 +102,7 @@ data class DriveData(
 // If your server returns a structured JSON for success/failure, update this.
 // For instance, if it returns: {"message": "OK"}
 data class LoginResponse(
-    val token: String
+    val Token: String
 )
 
 // NEW: Data model for UserLogin request
