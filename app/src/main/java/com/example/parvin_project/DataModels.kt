@@ -64,3 +64,49 @@ data class CellInfoData(
     val systemId: Int? = null,   // CDMA specific
     val status: String? = null // General status/error message
 )
+
+// NEW: Data models for the /drive API
+data class DriveBase(
+    val name: String
+)
+
+data class Signal(
+    val record_time: String?, // ISO 8601 format (e.g., "2024-06-14T12:00:00Z")
+    val plmn_id: String?,
+    val cell_id: String?,
+    val technology: String?,
+    val signal_strength: Int?, // dBm
+    val download_rate: Double?, // KB/s
+    val upload_rate: Double?, // KB/s
+    val dns_lookup_rate: Double?, // ms
+    val ping: Double?, // ms
+    val sms_delivery_time: Double?, // ms (was Int in OpenAPI, but your code generates Double for durationMs)
+    val rsrp: Int?, // dBm
+    val rsrq: Int?, // dB
+    val longitude: Double?,
+    val latitude: Double?,
+    val pci: String?,
+    val tac: String?
+)
+
+data class DriveData(
+    val drive: DriveBase,
+    val signals: List<Signal>
+)
+
+// NEW: Data models for the /auth/login API (if response is simple string)
+// Based on OpenAPI, it just returns "OK" or "Unauthorized".
+// If it truly returns only a status code, we might not need a data class for the response body.
+// However, if it returns a string like "OK", we can capture that.
+// For now, we'll assume it's just a status code and maybe a simple message.
+// If your server returns a structured JSON for success/failure, update this.
+// For instance, if it returns: {"message": "OK"}
+data class LoginResponse(
+    val message: String
+)
+
+// NEW: Data model for UserLogin request
+data class UserLogin(
+    val username: String,
+    val password: String
+)

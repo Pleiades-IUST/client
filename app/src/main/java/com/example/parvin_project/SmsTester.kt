@@ -25,7 +25,7 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
 
     // IMPORTANT: Replace with a valid phone number you control for testing.
     // Sending SMS can incur charges. 
-    private val RECIPIENT_PHONE_NUMBER = "+989124904530"
+    private val RECIPIENT_PHONE_NUMBER = "+989193549929"
 
     private val SENT_SMS_ACTION = "SMS_SENT_ACTION"
     private val DELIVERED_SMS_ACTION = "SMS_DELIVERED_ACTION"

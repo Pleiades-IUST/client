@@ -85,12 +85,14 @@ class MainActivity : AppCompatActivity() {
                         infoTextView.text = it // Directly display formatted live data
                     }
                 }
-                ServiceConstants.ACTION_RECEIVE_FULL_LOGS -> {
-                    val fullLogs = intent.getStringExtra(ServiceConstants.EXTRA_FULL_LOGS)
-                    fullLogs?.let {
+                ServiceConstants.ACTION_RECEIVE_FULL_LOGS -> { // This action now carries API upload status
+                    val apiStatusMessage = intent.getStringExtra(ServiceConstants.EXTRA_FULL_LOGS)
+                    apiStatusMessage?.let {
                         TransitionManager.beginDelayedTransition(rootLayout)
-                        infoTextView.text = it // Display full formatted logs
-                        Toast.makeText(context, "Full logs loaded!", Toast.LENGTH_SHORT).show()
+                        infoTextView.text = it // Display API upload status/error
+                        Toast.makeText(context, "API Upload Status Received!", Toast.LENGTH_SHORT).show()
+                        // After upload, revert button state to START
+                        updateToggleButtonState(false) // Set to STOPPED state
                     }
                 }
             }
@@ -222,28 +224,20 @@ class MainActivity : AppCompatActivity() {
                 startRecordingService()
                 updateToggleButtonState(true)
                 TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Permissions granted. Starting data collection service..."
-                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
+                infoTextView.text = "Permissions granted. Starting data collection service... Data will be uploaded to API on STOP." // Updated message
+                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show()
             } else {
                 TransitionManager.beginDelayedTransition(rootLayout)
                 infoTextView.text = "Not all required permissions were granted. Cannot start service. Please grant them in app settings."
                 updateToggleButtonState(false)
             }
         } else if (requestCode == POST_NOTIFICATIONS_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startRecordingService()
-                updateToggleButtonState(true)
-                TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Notification permission granted. Starting data collection service..."
-                Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show() // New Toast
-            } else {
-                Log.w("MainActivity", "POST_NOTIFICATIONS permission denied. Service might not work as expected.")
-                Toast.makeText(this, "Notification permission denied. Service might not run in foreground properly.", Toast.LENGTH_LONG).show()
-                startRecordingService()
-                updateToggleButtonState(true)
-                TransitionManager.beginDelayedTransition(rootLayout)
-                infoTextView.text = "Attempting to start service without notification permission. Check device settings if service fails."
-            }
+            // ... (keep this part as is) ...
+            startRecordingService()
+            updateToggleButtonState(true)
+            TransitionManager.beginDelayedTransition(rootLayout)
+            infoTextView.text = "Notification permission granted. Starting data collection service... Data will be uploaded to API on STOP." // Updated message
+            Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show()
         }
     }
 

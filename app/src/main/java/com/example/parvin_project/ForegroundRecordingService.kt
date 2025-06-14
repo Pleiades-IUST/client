@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
@@ -25,6 +26,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.core.content.ContextCompat
+import com.example.parvin_project.RetrofitClient // Add this
+import com.example.parvin_project.PleiadesApiService // Add this
+import retrofit2.HttpException // Add this for handling HTTP errors
+import java.io.IOException // Add this for network errors
 
 // IMPORTANT: Ensure these data classes are defined in a file like `data_classes.kt`
 /*
@@ -56,7 +61,7 @@ data class CellInfoData(
 class ForegroundRecordingService : LifecycleService() {
 
     private lateinit var handler: Handler
-    private val UPDATE_INTERVAL_MS = 5000L // 5 seconds
+    private val UPDATE_INTERVAL_MS = 10000L // 5 seconds
 
     // Helper classes (initialized with service context)
     private lateinit var locationTracker: LocationTracker
@@ -76,6 +81,8 @@ class ForegroundRecordingService : LifecycleService() {
     private var shouldCaptureSmsTest: Boolean = true
     private var shouldCaptureDnsTest: Boolean = true
     private var shouldCaptureUploadRate: Boolean = true
+
+    private lateinit var apiService: PleiadesApiService
 
     private lateinit var localBroadcastManager: LocalBroadcastManager
 
@@ -255,6 +262,8 @@ class ForegroundRecordingService : LifecycleService() {
         dnsTester = DnsTester(this)
         uploadTester = UploadTester(this)
 
+        apiService = RetrofitClient.apiService // Initialize apiService here
+
         createNotificationChannel()
     }
 
@@ -278,10 +287,6 @@ class ForegroundRecordingService : LifecycleService() {
                 Log.d("ForegroundService", "Received STOP command.")
                 stopRecording()
             }
-            ServiceConstants.ACTION_REQUEST_FULL_LOGS -> {
-                Log.d("ForegroundService", "Received explicit request for full logs. Sending now.")
-                sendFullLogsToActivity(andThenStopSelf = false)
-            }
         }
 
         return START_STICKY
@@ -303,10 +308,11 @@ class ForegroundRecordingService : LifecycleService() {
         handler.removeCallbacks(updateRunnable)
         locationTracker.stopLocationUpdates()
         smsTester.unregisterReceivers()
-        Log.d("ForegroundService", "Recording stopped. Preparing to send full logs.")
+        Log.d("ForegroundService", "Recording stopped. Preparing to send data to API.")
         // Update notification to indicate recording has stopped
-        updateNotification("Network Monitor: Recording stopped. Tap to re-open the app.") // Changed message
-        sendFullLogsToActivity(andThenStopSelf = true)
+        updateNotification("Network Monitor: Recording stopped. Tap to re-open the app.")
+        // Now call the new API upload function
+        sendDataToApiAndStopSelf(andThenStopSelf = true) // <-- Changed here
     }
 
     private fun createNotificationChannel() {
@@ -351,105 +357,148 @@ class ForegroundRecordingService : LifecycleService() {
      * Formats all recorded data and sends it to the `MainActivity`.
      * @param andThenStopSelf If true, calls stopSelf() after the broadcast is sent.
      */
-    private fun sendFullLogsToActivity(andThenStopSelf: Boolean) {
+    /**
+     * Converts recordedDataList to DriveData format and sends it to the API.
+     * @param andThenStopSelf If true, calls stopSelf() after the broadcast is sent.
+     */
+    private fun sendDataToApiAndStopSelf(andThenStopSelf: Boolean) {
         lifecycleScope.launch(Dispatchers.IO) {
-            val logBuilder = StringBuilder()
             if (recordedDataList.isEmpty()) {
-                logBuilder.append("No data was recorded during the last session.")
-                Log.w("ForegroundService", "recordedDataList is empty when trying to send full logs.")
-            } else {
-                logBuilder.append("--- RECORDED SESSION LOGS (${recordedDataList.size} entries) ---\n\n")
-                recordedDataList.forEachIndexed { index, dataMap ->
-                    logBuilder.append("--- Entry ${index + 1} ---\n")
-                    (dataMap["timestamp"] as? String)?.let { logBuilder.append("Timestamp: $it\n") }
+                Log.w("ForegroundService", "recordedDataList is empty. No data to send to API.")
+                withContext(Dispatchers.Main) {
+                    val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS) // Re-use this action to signal completion
+                    intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, "No data was recorded during the session to upload.")
+                    localBroadcastManager.sendBroadcast(intent)
+                    if (andThenStopSelf) stopSelf()
+                }
+                return@launch
+            }
 
-                    (dataMap["location"] as? LocationData)?.let { locationData ->
-                        logBuilder.append("Location:\n")
-                        if (locationData.latitude != null && locationData.longitude != null) {
-                            logBuilder.append("  Latitude: ${String.format("%.6f", locationData.latitude)}\n")
-                            logBuilder.append("  Longitude: ${String.format("%.6f", locationData.longitude)}\n")
-                        } else {
-                            logBuilder.append("  Status: ${locationData.status}\n")
+            val driveName = "MobileDrive_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}"
+            val signals = recordedDataList.mapNotNull { dataMap ->
+                try {
+                    val locationData = dataMap["location"] as? LocationData
+                    val cellInfoData = dataMap["cellInfo"] as? CellInfoData
+
+                    // Convert CellInfoData fields to String as required by API Signal schema
+                    val cellIdString = cellInfoData?.cellId?.toString()
+                    val pciString = cellInfoData?.pci?.toString()
+                    val tacString = cellInfoData?.tac?.toString()
+
+                    // Ensure record_time is in ISO 8601 format
+                    val recordTime = dataMap["timestamp"] as? String // Assuming timestamp is already in YYYY-MM-DD HH:mm:ss
+                    val isoRecordTime = recordTime?.let {
+                        try {
+                            val originalFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                            val date = originalFormat.parse(it)
+                            val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
+                            isoFormat.timeZone = java.util.TimeZone.getTimeZone("UTC") // API expects Z for UTC
+                            isoFormat.format(date)
+                        } catch (e: Exception) {
+                            Log.e("ForegroundService", "Error converting timestamp to ISO 8601: $it", e)
+                            null
                         }
                     }
 
-                    val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean ?: false
-                    if (downloadCaptureEnabled) {
-                        (dataMap["downloadRateKbps"] as? Double)?.let { rate ->
-                            logBuilder.append("  Download Rate: ${String.format(Locale.getDefault(), "%.2f", rate)} KB/s\n")
-                        } ?: logBuilder.append("  Download Rate: N/A\n")
-                    } else {
-                        logBuilder.append("  Download Rate: Not Captured\n")
+                    // Convert smsDeliveryTimeMs to Double, handle "Failed" or "Skipped" strings
+                    val smsDeliveryTime = when (val smsResult = dataMap["smsDeliveryTimeMs"]) {
+                        is Double -> smsResult
+                        is String -> smsResult.toDoubleOrNull()
+                        else -> null
                     }
 
-                    val pingCaptureEnabled = dataMap["pingCaptureEnabled"] as? Boolean ?: false
-                    if (pingCaptureEnabled) {
-                        (dataMap["pingResultMs"] as? Double)?.let { ping ->
-                            logBuilder.append("  Ping Result: ${String.format(Locale.getDefault(), "%.2f", ping)} ms\n")
-                        } ?: logBuilder.append("  Ping Result: N/A\n")
-                    } else {
-                        logBuilder.append("  Ping Result: Not Captured\n")
-                    }
 
-                    val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean ?: false
-                    if (smsCaptureEnabled) {
-                        (dataMap["smsDeliveryTimeMs"] as? String)?.let { smsResult ->
-                            logBuilder.append("  SMS Delivery Time: $smsResult\n")
-                        } ?: logBuilder.append("  SMS Delivery Time: N/A\n")
-                    } else {
-                        logBuilder.append("  SMS Delivery Time: Not Captured\n")
-                    }
-
-                    val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean ?: false
-                    if (dnsCaptureEnabled) {
-                        (dataMap["dnsLookupTimeMs"] as? Double)?.let { dns ->
-                            logBuilder.append("  DNS Lookup Time: ${String.format(Locale.getDefault(), "%.2f", dns)} ms\n")
-                        } ?: logBuilder.append("  DNS Lookup Time: N/A\n")
-                    } else {
-                        logBuilder.append("  DNS Lookup Time: Not Captured\n")
-                    }
-
-                    val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean ?: false
-                    if (uploadCaptureEnabled) {
-                        (dataMap["uploadRateKbps"] as? Double)?.let { upload ->
-                            logBuilder.append("  Upload Rate: ${String.format(Locale.getDefault(), "%.2f", upload)} KB/s\n")
-                        } ?: logBuilder.append("  Upload Rate: N/A\n")
-                    } else {
-                        logBuilder.append("  Upload Rate: Not Captured\n")
-                    }
-
-                    (dataMap["cellInfo"] as? CellInfoData)?.let { cellInfoData ->
-                        logBuilder.append("Cell Info:\n")
-                        cellInfoData.technology?.let { logBuilder.append("  Technology: $it\n") }
-                        cellInfoData.signalStrength_dBm?.let { logBuilder.append("  Signal: $it dBm\n") }
-                        cellInfoData.plmnId?.let { logBuilder.append("  PLMN-ID: $it\n") }
-                        cellInfoData.lac?.let { logBuilder.append("  LAC: $it\n") }
-                        cellInfoData.cellId?.let { logBuilder.append("  Cell ID: ${it}\n") }
-                        cellInfoData.rsrp_dBm?.let { logBuilder.append("  RSRP: $it dBm\n") }
-                        cellInfoData.rsrq_dB?.let { logBuilder.append("  RSRQ: $it dB\n") }
-                        cellInfoData.pci?.let { logBuilder.append("  PCI: $it\n") }
-                        cellInfoData.tac?.let { logBuilder.append("  TAC: $it\n") }
-//                        cellInfoData.nci?.let { logBuilder.append("  NCI: ${it}\n") }
-                        cellInfoData.nrarfcn?.let { logBuilder.append("  NR-ARFCN: $it\n") }
-                        cellInfoData.bands?.let { bands -> if (bands.isNotEmpty()) logBuilder.append("  Bands: ${bands.joinToString(", ")}\n") }
-                        cellInfoData.csiRsrp_dBm?.let { logBuilder.append("  CSI-RSRP: $it dBm\n") }
-                        cellInfoData.csiRsrq_dB?.let { logBuilder.append("  CSI-RSRQ: $it dB\n") }
-                        cellInfoData.status?.let { status -> logBuilder.append("  Status: $status\n") }
-
-                    } ?: logBuilder.append("  Cell Info Status: N/A\n")
-                    logBuilder.append("\n") // Separator between entries
+                    Signal(
+                        record_time = isoRecordTime,
+                        plmn_id = cellInfoData?.plmnId,
+                        cell_id = cellIdString, // Converted to String
+                        technology = cellInfoData?.technology,
+                        signal_strength = cellInfoData?.signalStrength_dBm,
+                        download_rate = dataMap["downloadRateKbps"] as? Double,
+                        upload_rate = dataMap["uploadRateKbps"] as? Double,
+                        dns_lookup_rate = dataMap["dnsLookupTimeMs"] as? Double,
+                        ping = dataMap["pingResultMs"] as? Double,
+                        sms_delivery_time = smsDeliveryTime, // Converted to Double?
+                        rsrp = cellInfoData?.rsrp_dBm,
+                        rsrq = cellInfoData?.rsrq_dB,
+                        longitude = locationData?.longitude,
+                        latitude = locationData?.latitude,
+                        pci = pciString, // Converted to String
+                        tac = tacString // Converted to String
+                    )
+                } catch (e: Exception) {
+                    Log.e("ForegroundService", "Error converting data entry to Signal object: ${e.message}", e)
+                    null // Skip this entry if conversion fails
                 }
             }
 
-            withContext(Dispatchers.Main) {
-                val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS)
-                intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, logBuilder.toString())
-                localBroadcastManager.sendBroadcast(intent)
-                Log.d("ForegroundService", "ACTION_RECEIVE_FULL_LOGS broadcast sent.")
+            val driveData = DriveData(
+                drive = DriveBase(name = driveName),
+                signals = signals
+            )
 
+            // Send to API
+            withContext(Dispatchers.Main) { // Temporarily switch to Main for Toast/UI update
+                Toast.makeText(this@ForegroundRecordingService, "Uploading data to server...", Toast.LENGTH_LONG).show()
+                Log.d("ForegroundService", "Attempting to upload ${signals.size} signals to /drive API.")
+            }
+
+
+            try {
+                val response = apiService.createDriveEntry(driveData)
+                withContext(Dispatchers.Main) {
+                    if (response.isSuccessful) {
+                        Log.d("ForegroundService", "Data successfully uploaded to API. Response code: ${response.code()}")
+                        val message = "Data uploaded successfully! ${signals.size} entries."
+                        Toast.makeText(this@ForegroundRecordingService, message, Toast.LENGTH_LONG).show()
+                        val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS) // Re-use for success message
+                        intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, "Upload successful. Total entries: ${signals.size}\n\n$message")
+                        localBroadcastManager.sendBroadcast(intent)
+                    } else {
+                        val errorBody = response.errorBody()?.string()
+                        Log.e("ForegroundService", "API upload failed. Code: ${response.code()}, Error: $errorBody")
+                        val message = "Upload failed: ${response.code()} ${response.message()}\nError: ${errorBody ?: "No error body"}"
+                        Toast.makeText(this@ForegroundRecordingService, message, Toast.LENGTH_LONG).show()
+                        val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS) // Re-use for error message
+                        intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, "Upload failed.\n\n$message")
+                        localBroadcastManager.sendBroadcast(intent)
+                    }
+                }
+            } catch (e: HttpException) {
+                withContext(Dispatchers.Main) {
+                    Log.e("ForegroundService", "HTTP Exception during API upload: ${e.message()}", e)
+                    val message = "Network Error: HTTP Exception (${e.code()})\n${e.message()}"
+                    Toast.makeText(this@ForegroundRecordingService, message, Toast.LENGTH_LONG).show()
+                    val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS)
+                    intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, "Upload failed.\n\n$message")
+                    localBroadcastManager.sendBroadcast(intent)
+                }
+            } catch (e: IOException) {
+                withContext(Dispatchers.Main) {
+                    Log.e("ForegroundService", "IO Exception during API upload: ${e.message}", e)
+                    val message = "Network Error: Could not connect to server.\nCheck URL, internet connection, or server status. Message: ${e.message}"
+                    Toast.makeText(this@ForegroundRecordingService, message, Toast.LENGTH_LONG).show()
+                    val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS)
+                    intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, "Upload failed.\n\n$message")
+                    localBroadcastManager.sendBroadcast(intent)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Log.e("ForegroundService", "Unknown Error during API upload: ${e.message}", e)
+                    val message = "An unknown error occurred during upload: ${e.message}"
+                    Toast.makeText(this@ForegroundRecordingService, message, Toast.LENGTH_LONG).show()
+                    val intent = Intent(ServiceConstants.ACTION_RECEIVE_FULL_LOGS)
+                    intent.putExtra(ServiceConstants.EXTRA_FULL_LOGS, "Upload failed.\n\n$message")
+                    localBroadcastManager.sendBroadcast(intent)
+                }
+            } finally {
+                // Clear the recorded data list after attempting to send, regardless of success or failure.
+                // This prevents sending duplicate data if the service is stopped and started again without a full app restart.
+                recordedDataList.clear()
+                entryCount = 0 // Reset entry count
                 if (andThenStopSelf) {
                     stopSelf()
-                    Log.d("ForegroundService", "Service stopping self after sending logs.")
+                    Log.d("ForegroundService", "Service stopping self after API upload attempt.")
                 }
             }
         }

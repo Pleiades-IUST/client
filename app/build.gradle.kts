@@ -97,4 +97,11 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+
+    // Retrofit for network requests
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    // GSON converter for JSON serialization/deserialization
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    // OkHttp logging interceptor for debugging network requests (useful during development)
+    implementation("com.squareup.okhttp3:logging-interceptor:4.9.0")
 }
