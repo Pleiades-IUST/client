@@ -25,7 +25,7 @@ interface PleiadesApiService {
 object RetrofitClient {
 
     // TODO: REPLACE WITH YOUR ACTUAL BASE URL
-    private const val BASE_URL = "http://192.168.81.79:8080" // e.g., "http://192.168.1.100:8000" or "https://api.yourdomain.com"
+    private const val BASE_URL = "http://192.168.1.104:8080" // e.g., "http://192.168.1.100:8000" or "https://api.yourdomain.com"
 
     // Interceptor to add Authorization header
     private val authInterceptor = Interceptor { chain ->

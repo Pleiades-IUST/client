@@ -409,7 +409,7 @@ class ForegroundRecordingService : LifecycleService() {
 
 
                     Signal(
-                        record_time = isoRecordTime,
+                        record_time = recordTime,
                         plmn_id = cellInfoData?.plmnId,
                         cell_id = cellIdString, // Converted to String
                         technology = cellInfoData?.technology,
