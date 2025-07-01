@@ -131,7 +131,7 @@ class MainActivity : AppCompatActivity() {
         capturePingTestCheckBox.isChecked = true
         captureSmsTestCheckBox.isChecked = true
         captureDnsTestCheckBox.isChecked = true
-        captureUploadRateCheckBox.isChecked = true
+        captureUploadRateCheckBox.isChecked = false
 
         captureDownloadRateCheckBox.setOnCheckedChangeListener { _, _ -> updateInfoTextViewHint() }
         capturePingTestCheckBox.setOnCheckedChangeListener { _, _ -> updateInfoTextViewHint() }
