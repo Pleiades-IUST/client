@@ -1,6 +1,7 @@
 // MainActivity.kt
 package com.example.parvin_project
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -71,8 +72,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionHandler: PermissionHandler
     private lateinit var localBroadcastManager: LocalBroadcastManager // For receiving updates from service
 
-    private val PERMISSION_REQUEST_CODE = 101
-    private val POST_NOTIFICATIONS_REQUEST_CODE = 102 // For Android 13+ notifications
+    companion object {
+        private const val PERMISSION_REQUEST_CODE = 101
+        private const val POST_NOTIFICATIONS_REQUEST_CODE = 102
+        private const val FGS_LOCATION_REQUEST_CODE = 103   // ← new
+    }
+
+
 
     // BroadcastReceiver to get updates from the service
     private val serviceDataReceiver = object : BroadcastReceiver() {
@@ -149,10 +155,18 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // START logic:
                 // Request POST_NOTIFICATIONS for Android 13+ first
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
-                        return@setOnClickListener // Exit and wait for permission result
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (ContextCompat.checkSelfPermission(
+                            this,
+                            Manifest.permission.FOREGROUND_SERVICE_LOCATION
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        // request it, then return—wait for callback
+                        requestPermissions(
+                            arrayOf(Manifest.permission.FOREGROUND_SERVICE_LOCATION),
+                            FGS_LOCATION_REQUEST_CODE
+                        )
+                        return@setOnClickListener
                     }
                 }
 
@@ -238,6 +252,16 @@ class MainActivity : AppCompatActivity() {
             TransitionManager.beginDelayedTransition(rootLayout)
             infoTextView.text = "Notification permission granted. Starting data collection service... Data will be uploaded to API on STOP." // Updated message
             Toast.makeText(this, "Recording started. See persistent notification.", Toast.LENGTH_LONG).show()
+        } else if (requestCode == FGS_LOCATION_REQUEST_CODE) {
+            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                // Now that FGS_LOCATION is granted, restart the flow:
+                startRecordingService()
+                updateToggleButtonState(true)
+                Toast.makeText(this, "Service‑location permission granted.", Toast.LENGTH_SHORT).show()
+            } else {
+                // User denied—the service can’t start with location type
+                Toast.makeText(this, "Cannot start service without location‑type permission.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
