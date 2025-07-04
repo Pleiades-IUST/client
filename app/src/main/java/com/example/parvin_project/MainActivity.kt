@@ -155,7 +155,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // START logic:
                 // Request POST_NOTIFICATIONS for Android 13+ first
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     if (ContextCompat.checkSelfPermission(
                             this,
                             Manifest.permission.FOREGROUND_SERVICE_LOCATION

@@ -21,7 +21,7 @@ class PermissionHandler(private val activity: Activity, private val requestCode:
         Manifest.permission.READ_SMS,
         Manifest.permission.INTERNET, // INTERNET is usually granted by default, but good to include
         Manifest.permission.ACCESS_NETWORK_STATE,
-        Manifest.permission.FOREGROUND_SERVICE_LOCATION
+        // Manifest.permission.FOREGROUND_SERVICE_LOCATION
         // No need to include POST_NOTIFICATIONS here, as it's handled separately for API 33+
     )
 
