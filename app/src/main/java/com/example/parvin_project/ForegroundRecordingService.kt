@@ -1,67 +1,35 @@
 // ForegroundRecordingService.kt
 package com.example.parvin_project
 
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.core.content.ContextCompat
-import com.example.parvin_project.RetrofitClient // Add this
-import com.example.parvin_project.PleiadesApiService // Add this
-import retrofit2.HttpException // Add this for handling HTTP errors
-import java.io.IOException // Add this for network errors
 
-// IMPORTANT: Ensure these data classes are defined in a file like `data_classes.kt`
-/*
-data class LocationData(
-    val latitude: Double?,
-    val longitude: Double?,
-    val status: String // e.g., "OK", "Waiting for fix", "Providers disabled"
-)
-
-data class CellInfoData(
-    val technology: String?, // e.g., "LTE", "NR", "GSM"
-    val signalStrength_dBm: Int?, // General signal strength in dBm
-    val plmnId: String?, // Public Land Mobile Network ID (MCC+MNC)
-    val lac: Int?, // Location Area Code (for 2G/3G)
-    val cellId: Long?, // Cell Identity (for 2G/3G/4G/5G NR - using Long for NCI)
-    val pci: Int?, // Physical Cell Identity (for 4G/5G)
-    val tac: Int?, // Tracking Area Code (for 4G)
-    val nci: Long?, // NR Cell Identity (for 5G NR)
-    val nrarfcn: Int?, // NR Absolute Radio Frequency Channel Number (for 5G NR)
-    val bands: List<Int>?, // List of frequency bands (for 5G NR, LTE)
-    val csiRsrp_dBm: Int?, // CSI Reference Signal Received Power (for 5G NR)
-    val csiRsrq_dB: Int?, // CSI Reference Signal Received Quality (for 5G NR)
-    val rsrp_dBm: Int?, // Reference Signal Received Power (for LTE)
-    val rsrq_dB: Int?, // Reference Signal Received Quality (for LTE)
-    val status: String // e.g., "OK", "Permissions Denied", "No Cell Info"
-)
-*/
 
 class ForegroundRecordingService : LifecycleService() {
 
     private lateinit var handler: Handler
-    private val UPDATE_INTERVAL_MS = 10000L // 5 seconds
+    private val intervalMS = 10000L // 5 seconds
 
     // Helper classes (initialized with service context)
     private lateinit var locationTracker: LocationTracker
@@ -161,7 +129,7 @@ class ForegroundRecordingService : LifecycleService() {
                 }
             }
             // Reschedule the next update
-            handler.postDelayed(this, UPDATE_INTERVAL_MS)
+            handler.postDelayed(this, intervalMS)
         }
     }
 
@@ -170,11 +138,12 @@ class ForegroundRecordingService : LifecycleService() {
      * @param dataMap The map containing data for a single record.
      * @return A formatted String representing the live data.
      */
+    @SuppressLint("DefaultLocale")
     private fun formatDataForDisplay(dataMap: MutableMap<String, Any?>): String {
         val displayString = StringBuilder()
         displayString.append("--- Live Data: ${dataMap["timestamp"] as? String ?: "N/A"} ---\n")
 
-        val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean ?: false
+        val downloadCaptureEnabled = dataMap["downloadCaptureEnabled"] as? Boolean == true
         displayString.append("  Download: ")
         if (downloadCaptureEnabled) {
             (dataMap["downloadRateKbps"] as? Double)?.let { rate ->
@@ -184,7 +153,7 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        val pingCaptureEnabled = dataMap["pingCaptureEnabled"] as? Boolean ?: false
+        val pingCaptureEnabled = dataMap["pingCaptureEnabled"] as? Boolean == true
         displayString.append("  Ping: ")
         if (pingCaptureEnabled) {
             (dataMap["pingResultMs"] as? Double)?.let { ping ->
@@ -194,7 +163,7 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean ?: false
+        val smsCaptureEnabled = dataMap["smsCaptureEnabled"] as? Boolean == true
         displayString.append("  SMS: ")
         if (smsCaptureEnabled) {
             displayString.append("${dataMap["smsDeliveryTimeMs"] ?: "N/A"}\n")
@@ -202,7 +171,7 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean ?: false
+        val dnsCaptureEnabled = dataMap["dnsCaptureEnabled"] as? Boolean == true
         displayString.append("  DNS Lookup: ")
         if (dnsCaptureEnabled) {
             (dataMap["dnsLookupTimeMs"] as? Double)?.let { dns ->
@@ -212,7 +181,7 @@ class ForegroundRecordingService : LifecycleService() {
             displayString.append("Not captured\n")
         }
 
-        val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean ?: false
+        val uploadCaptureEnabled = dataMap["uploadCaptureEnabled"] as? Boolean == true
         displayString.append("  Upload: ")
         if (uploadCaptureEnabled) {
             (dataMap["uploadRateKbps"] as? Double)?.let { upload ->
@@ -231,7 +200,7 @@ class ForegroundRecordingService : LifecycleService() {
 
         val cellInfoData = dataMap["cellInfo"] as? CellInfoData
         if (cellInfoData != null && cellInfoData.technology != null) {
-            displayString.append("  Cell Tech: ${cellInfoData.technology ?: "N/A"}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
+            displayString.append("  Cell Tech: ${cellInfoData.technology}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
         } else {
             displayString.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
         }
@@ -245,7 +214,7 @@ class ForegroundRecordingService : LifecycleService() {
         handler = Handler(Looper.getMainLooper())
         localBroadcastManager = LocalBroadcastManager.getInstance(this)
 
-        locationTracker = LocationTracker(this, UPDATE_INTERVAL_MS) { /* Location updates handled internally by service */ }
+        locationTracker = LocationTracker(this, intervalMS) { /* Location updates handled internally by service */ }
         cellInfoCollector = CellInfoCollector(this)
         networkTester = NetworkTester(this)
         smsTester = SmsTester(this) { deliveryTime ->
@@ -301,7 +270,7 @@ class ForegroundRecordingService : LifecycleService() {
         handler.post(updateRunnable)
         Log.d("ForegroundService", "Recording started.")
         // Update notification to indicate active background recording
-        updateNotification("⚠ Big Brother Broadcast: Connection traced. Coordinates acquired. You are exposed.");
+        updateNotification("⚠ Big Brother Broadcast: Connection traced. Coordinates acquired. You are exposed.")
     }
 
     private fun stopRecording() {
@@ -316,15 +285,13 @@ class ForegroundRecordingService : LifecycleService() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                ServiceConstants.NOTIFICATION_CHANNEL_ID,
-                ServiceConstants.NOTIFICATION_CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(serviceChannel)
-        }
+        val serviceChannel = NotificationChannel(
+            ServiceConstants.NOTIFICATION_CHANNEL_ID,
+            ServiceConstants.NOTIFICATION_CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_LOW
+        )
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(serviceChannel)
     }
 
     /**
@@ -349,14 +316,10 @@ class ForegroundRecordingService : LifecycleService() {
 
     private fun updateNotification(contentText: String) {
         val notification = createNotification(contentText).build()
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(ServiceConstants.NOTIFICATION_ID, notification)
     }
 
-    /**
-     * Formats all recorded data and sends it to the `MainActivity`.
-     * @param andThenStopSelf If true, calls stopSelf() after the broadcast is sent.
-     */
     /**
      * Converts recordedDataList to DriveData format and sends it to the API.
      * @param andThenStopSelf If true, calls stopSelf() after the broadcast is sent.
@@ -387,13 +350,15 @@ class ForegroundRecordingService : LifecycleService() {
 
                     // Ensure record_time is in ISO 8601 format
                     val recordTime = dataMap["timestamp"] as? String // Assuming timestamp is already in YYYY-MM-DD HH:mm:ss
-                    val isoRecordTime = recordTime?.let {
+                    recordTime?.let {
                         try {
                             val originalFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                             val date = originalFormat.parse(it)
                             val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
                             isoFormat.timeZone = java.util.TimeZone.getTimeZone("UTC") // API expects Z for UTC
-                            isoFormat.format(date)
+                            if (date != null) {
+                                isoFormat.format(date)
+                            }
                         } catch (e: Exception) {
                             Log.e("ForegroundService", "Error converting timestamp to ISO 8601: $it", e)
                             null

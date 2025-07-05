@@ -134,8 +134,8 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
         }
 
         // --- ADDED NULL CHECK HERE ---
-        // val smsManager = context.getSystemService(SmsManager::class.java)
-        val smsManager = SmsManager.getDefault()
+         val smsManager = context.getSystemService(SmsManager::class.java)
+//        val smsManager = SmsManager.getDefault()
         if (smsManager == null) {
             Log.e("SmsTester", "SmsManager is NULL. Device likely does not support telephony (e.g., Wi-Fi tablet or emulator without phone features). SMS NOT SENT.")
             onSmsDeliveryResult(null) // Report failure

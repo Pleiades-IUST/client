@@ -2,6 +2,7 @@
 package com.example.parvin_project
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -11,51 +12,16 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.ViewGroup
 import android.widget.Button
-import android.widget.TextView
 import android.widget.CheckBox
-import android.widget.CompoundButton
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.transition.TransitionManager
-import android.view.ViewGroup
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import android.content.BroadcastReceiver // Import BroadcastReceiver
-import android.provider.Telephony
+import androidx.transition.TransitionManager
 
-// IMPORTANT: Ensure these data classes are defined in a file like `data_classes.kt`
-/*
-data class LocationData(
-    val latitude: Double?,
-    val longitude: Double?,
-    val status: String // e.g., "OK", "Waiting for fix", "Providers disabled"
-)
-
-data class CellInfoData(
-    val technology: String?, // e.g., "LTE", "NR", "GSM"
-    val signalStrength_dBm: Int?, // General signal strength in dBm
-    val plmnId: String?, // Public Land Mobile Network ID (MCC+MNC)
-    val lac: Int?, // Location Area Code (for 2G/3G)
-    val cellId: Long?, // Cell Identity (for 2G/3G/4G/5G NR - using Long for NCI)
-    val pci: Int?, // Physical Cell Identity (for 4G/5G)
-    val tac: Int?, // Tracking Area Code (for 4G)
-    val nci: Long?, // NR Cell Identity (for 5G NR)
-    val nrarfcn: Int?, // NR Absolute Radio Frequency Channel Number (for 5G NR)
-    val bands: List<Int>?, // List of frequency bands (for 5G NR, LTE)
-    val csiRsrp_dBm: Int?, // CSI Reference Signal Received Power (for 5G NR)
-    val csiRsrq_dB: Int?, // Reference Signal Received Quality (for LTE)
-    val status: String // e.g., "OK", "Permissions Denied", "No Cell Info"
-)
-*/
-
-// IMPORTANT: Ensure this extension function is defined in a file like `Utils.kt`
-/*
-import java.util.Locale
-fun String.capitalizeWords(): String = split(" ").joinToString(" ") { word ->
-    word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-}
-*/
 
 class MainActivity : AppCompatActivity() {
 
@@ -156,8 +122,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // START logic:
 
-//                ensureDefaultSmsApp()
-
                 // Request POST_NOTIFICATIONS for Android 13+ first
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     if (ContextCompat.checkSelfPermission(
@@ -192,16 +156,6 @@ class MainActivity : AppCompatActivity() {
         // Set click listener for the copy button
         copyButton.setOnClickListener {
             copyTextToClipboard(infoTextView.text.toString())
-        }
-    }
-
-    private fun ensureDefaultSmsApp() {
-        val myPackage = packageName
-        val defaultSms = Telephony.Sms.getDefaultSmsPackage(this)
-        if (defaultSms != myPackage) {
-            Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
-                putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, myPackage)
-            }.also { startActivity(it) }
         }
     }
 
@@ -244,8 +198,8 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (permissionHandler.handlePermissionsResult(requestCode, grantResults)) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), POST_NOTIFICATIONS_REQUEST_CODE)
                         return
                     }
                 }
@@ -302,14 +256,6 @@ class MainActivity : AppCompatActivity() {
         Log.d("MainActivity", "Recording service STOP command sent to service.")
     }
 
-    private fun requestFullLogsFromService() {
-        Log.d("MainActivity", "requestFullLogsFromService() called. Service should broadcast it.")
-        val serviceIntent = Intent(this, ForegroundRecordingService::class.java).apply {
-            action = ServiceConstants.ACTION_REQUEST_FULL_LOGS
-        }
-        startService(serviceIntent)
-    }
-
     private fun updateToggleButtonState(isServiceRunning: Boolean) {
         if (isServiceRunning) {
             toggleButton.setBackgroundColor(ContextCompat.getColor(this, R.color.red_500))
@@ -325,7 +271,7 @@ class MainActivity : AppCompatActivity() {
      * Helper function to copy text to the clipboard.
      */
     private fun copyTextToClipboard(text: String) {
-        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clipData = ClipData.newPlainText("Network Logs", text)
         clipboardManager.setPrimaryClip(clipData)
         Toast.makeText(this, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show()
