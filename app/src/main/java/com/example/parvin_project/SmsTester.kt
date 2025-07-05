@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import java.util.concurrent.ConcurrentHashMap // To safely store send times
 
 /**
@@ -86,8 +87,18 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
      */
     fun registerReceivers() {
         try {
-            context.registerReceiver(smsSentReceiver, IntentFilter(SENT_SMS_ACTION))
-            context.registerReceiver(smsDeliveredReceiver, IntentFilter(DELIVERED_SMS_ACTION))
+            ContextCompat.registerReceiver(
+                context,
+                smsSentReceiver,
+                IntentFilter(SENT_SMS_ACTION),
+                ContextCompat.RECEIVER_EXPORTED
+            )
+            ContextCompat.registerReceiver(
+                context,
+                smsDeliveredReceiver,
+                IntentFilter(DELIVERED_SMS_ACTION),
+                ContextCompat.RECEIVER_EXPORTED
+            )
             Log.d("SmsTester", "SMS BroadcastReceivers registered.")
         } catch (e: Exception) {
             Log.e("SmsTester", "Error registering SMS receivers: ${e.message}", e)
