@@ -144,4 +144,21 @@
         android:layout_marginTop="8dp"
         app:cornerRadius="8dp" />
 
+    <!-- Logout button -->
+    <Button
+        android:id="@+id/logoutButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="LOG OUT"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:textSize="18sp"
+        android:textColor="@android:color/white"
+        android:backgroundTint="@color/red_500"
+        android:layout_marginTop="8dp"
+        app:cornerRadius="8dp"/>
+
+
 </LinearLayout>

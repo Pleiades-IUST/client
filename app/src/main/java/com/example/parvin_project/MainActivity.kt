@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private var isRecordingServiceRunning: Boolean = false // Track service state
     private lateinit var infoTextView: TextView
     private lateinit var toggleButton: Button
+    private lateinit var logoutButton: Button
     private lateinit var copyButton: Button
     private lateinit var rootLayout: ViewGroup
     private lateinit var captureDownloadRateCheckBox: CheckBox
@@ -156,6 +157,22 @@ class MainActivity : AppCompatActivity() {
         // Set click listener for the copy button
         copyButton.setOnClickListener {
             copyTextToClipboard(infoTextView.text.toString())
+        }
+
+        logoutButton = findViewById(R.id.logoutButton)
+        logoutButton.setOnClickListener {
+            // 1) clear stored token
+            TokenManager.clearTokens()
+
+            // 2) send user back to LoginActivity, clearing the back‑stack
+            val intent = Intent(this, LoginActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            startActivity(intent)
+
+            stopRecordingService()
+            // 3) finish this activity so there’s no “back” possible
+            finish()
         }
     }
 
