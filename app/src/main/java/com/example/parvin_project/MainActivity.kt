@@ -22,6 +22,7 @@ import androidx.transition.TransitionManager
 import android.view.ViewGroup
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.content.BroadcastReceiver // Import BroadcastReceiver
+import android.provider.Telephony
 
 // IMPORTANT: Ensure these data classes are defined in a file like `data_classes.kt`
 /*
@@ -154,6 +155,9 @@ class MainActivity : AppCompatActivity() {
                 // infoTextView will be updated by the ACTION_RECEIVE_FULL_LOGS broadcast
             } else {
                 // START logic:
+
+//                ensureDefaultSmsApp()
+
                 // Request POST_NOTIFICATIONS for Android 13+ first
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     if (ContextCompat.checkSelfPermission(
@@ -188,6 +192,16 @@ class MainActivity : AppCompatActivity() {
         // Set click listener for the copy button
         copyButton.setOnClickListener {
             copyTextToClipboard(infoTextView.text.toString())
+        }
+    }
+
+    private fun ensureDefaultSmsApp() {
+        val myPackage = packageName
+        val defaultSms = Telephony.Sms.getDefaultSmsPackage(this)
+        if (defaultSms != myPackage) {
+            Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, myPackage)
+            }.also { startActivity(it) }
         }
     }
 
