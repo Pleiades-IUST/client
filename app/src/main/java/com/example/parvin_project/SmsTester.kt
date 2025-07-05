@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -87,18 +88,34 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
      */
     fun registerReceivers() {
         try {
-            ContextCompat.registerReceiver(
-                context,
-                smsSentReceiver,
-                IntentFilter(SENT_SMS_ACTION),
-                ContextCompat.RECEIVER_EXPORTED
-            )
-            ContextCompat.registerReceiver(
-                context,
-                smsDeliveredReceiver,
-                IntentFilter(DELIVERED_SMS_ACTION),
-                ContextCompat.RECEIVER_EXPORTED
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ContextCompat.registerReceiver(
+                    context,
+                    smsSentReceiver,
+                    IntentFilter(SENT_SMS_ACTION),
+                    ContextCompat.RECEIVER_EXPORTED
+                )
+                ContextCompat.registerReceiver(
+                    context,
+                    smsDeliveredReceiver,
+                    IntentFilter(DELIVERED_SMS_ACTION),
+                    ContextCompat.RECEIVER_EXPORTED
+                )
+            } else {
+                ContextCompat.registerReceiver(
+                    context,
+                    smsSentReceiver,
+                    IntentFilter(SENT_SMS_ACTION),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+                ContextCompat.registerReceiver(
+                    context,
+                    smsDeliveredReceiver,
+                    IntentFilter(DELIVERED_SMS_ACTION),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+            }
+
             Log.d("SmsTester", "SMS BroadcastReceivers registered.")
         } catch (e: Exception) {
             Log.e("SmsTester", "Error registering SMS receivers: ${e.message}", e)
