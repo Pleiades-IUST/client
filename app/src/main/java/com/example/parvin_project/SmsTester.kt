@@ -102,18 +102,8 @@ class SmsTester(private val context: Context, private val onSmsDeliveryResult: (
                     ContextCompat.RECEIVER_EXPORTED
                 )
             } else {
-                ContextCompat.registerReceiver(
-                    context,
-                    smsSentReceiver,
-                    IntentFilter(SENT_SMS_ACTION),
-                    ContextCompat.RECEIVER_NOT_EXPORTED
-                )
-                ContextCompat.registerReceiver(
-                    context,
-                    smsDeliveredReceiver,
-                    IntentFilter(DELIVERED_SMS_ACTION),
-                    ContextCompat.RECEIVER_NOT_EXPORTED
-                )
+                context.registerReceiver(smsSentReceiver, IntentFilter(SENT_SMS_ACTION))
+                context.registerReceiver(smsDeliveredReceiver, IntentFilter(DELIVERED_SMS_ACTION))
             }
 
             Log.d("SmsTester", "SMS BroadcastReceivers registered.")
