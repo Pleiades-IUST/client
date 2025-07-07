@@ -71,7 +71,15 @@ class CellInfoCollector(private val context: Context) {
         val identity = cellInfo.cellIdentity
         val signal = cellInfo.cellSignalStrength
         val arfcn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) identity.arfcn else null
-        val band = arfcn?.let { getGsmBand(it) }
+
+        // --- CHANGE STARTS HERE ---
+        // Ensure 'band' is a non-nullable String by providing a default value if arfcn is null
+        val band: String = if (arfcn != null) {
+            getGsmBand(arfcn) // getGsmBand (from your helpers) returns non-nullable String
+        } else {
+            "Unknown GSM" // Provide a default non-nullable string for the band
+        }
+        // --- CHANGE ENDS HERE ---
 
         return CellInfoData(
             technology = "GSM",
@@ -79,8 +87,8 @@ class CellInfoCollector(private val context: Context) {
             lac = identity.lac.takeIf { it != CellInfo.UNAVAILABLE },
             cellId = identity.cid.toLong().takeIf { it != CellInfo.UNAVAILABLE.toLong() },
             arfcn = arfcn?.takeIf { it != CellInfo.UNAVAILABLE },
-            frequencyBand = band,
-            frequencyHz = arfcn?.let { getGsmDownlinkFrequency(it, band) },
+            frequencyBand = band, // Now 'band' is guaranteed to be a non-nullable String
+            frequencyHz = arfcn?.let { getGsmDownlinkFrequency(it, band) }, // This is line 83, now 'band' is String
             rxLev = signal.dbm.takeIf { it != CellInfo.UNAVAILABLE }
         )
     }
