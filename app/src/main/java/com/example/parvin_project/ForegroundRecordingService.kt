@@ -200,10 +200,11 @@ class ForegroundRecordingService : LifecycleService() {
 
         val cellInfoData = dataMap["cellInfo"] as? CellInfoData
         if (cellInfoData != null && cellInfoData.technology != null) {
-            displayString.append("  Cell Tech: ${cellInfoData.technology}, Signal: ${cellInfoData.signalStrength_dBm ?: "N/A"} dBm\n")
+            displayString.append("  Cell Tech: ${cellInfoData.technology}\n")
         } else {
-            displayString.append("  Cell Status: ${cellInfoData?.status ?: "N/A"}\n")
+            displayString.append("  Cell Status: ${cellInfoData?.errorMessage ?: "N/A"}\n")
         }
+        displayString.append("  Frequency: ${cellInfoData?.frequencyHz}\n")
 
         return displayString.toString()
     }
@@ -343,10 +344,6 @@ class ForegroundRecordingService : LifecycleService() {
                     val locationData = dataMap["location"] as? LocationData
                     val cellInfoData = dataMap["cellInfo"] as? CellInfoData
 
-                    // Convert CellInfoData fields to String as required by API Signal schema
-                    val cellIdString = cellInfoData?.cellId?.toString()
-                    val pciString = cellInfoData?.pci?.toString()
-                    val tacString = cellInfoData?.tac?.toString()
 
                     // Ensure record_time is in ISO 8601 format
                     val recordTime = dataMap["timestamp"] as? String // Assuming timestamp is already in YYYY-MM-DD HH:mm:ss
@@ -375,21 +372,34 @@ class ForegroundRecordingService : LifecycleService() {
 
                     Signal(
                         record_time = recordTime,
-                        plmn_id = cellInfoData?.plmnId,
-                        cell_id = cellIdString, // Converted to String
+
                         technology = cellInfoData?.technology,
-                        signal_strength = cellInfoData?.signalStrength_dBm,
+                        plmnId = cellInfoData?.plmnId,
+                        lac = cellInfoData?.lac,
+                        rac = cellInfoData?.rac,
+                        tac = cellInfoData?.tac,
+                        cellId = cellInfoData?.cellId,
+
+                        frequencyBand = cellInfoData?.frequencyBand,
+                        arfcn = cellInfoData?.arfcn,
+                        earfcn = cellInfoData?.earfcn,
+                        uarfcn = cellInfoData?.uarfcn,
+                        nrarfcn = cellInfoData?.nrarfcn,
+                        frequencyHz = cellInfoData?.frequencyHz,
+
+                        rsrp = cellInfoData?.rsrp,
+                        rsrq = cellInfoData?.rsrq,
+                        rscp = cellInfoData?.rscp,
+                        ecNo = cellInfoData?.rscp,
+                        rxLev = cellInfoData?.rxLev,
+
                         download_rate = dataMap["downloadRateKbps"] as? Double,
                         upload_rate = dataMap["uploadRateKbps"] as? Double,
                         dns_lookup_rate = dataMap["dnsLookupTimeMs"] as? Double,
                         ping = dataMap["pingResultMs"] as? Double,
                         sms_delivery_time = smsDeliveryTime, // Converted to Double?
-                        rsrp = cellInfoData?.rsrp_dBm,
-                        rsrq = cellInfoData?.rsrq_dB,
                         longitude = locationData?.longitude,
-                        latitude = locationData?.latitude,
-                        pci = pciString, // Converted to String
-                        tac = tacString // Converted to String
+                        latitude = locationData?.latitude
                     )
                 } catch (e: Exception) {
                     Log.e("ForegroundService", "Error converting data entry to Signal object: ${e.message}", e)
