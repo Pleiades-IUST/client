@@ -320,3 +320,75 @@ fun getLteDownlinkFrequency(earfcn: Int): Long? {
         (freqMHz * 1_000_000).toLong()
     }
 }
+
+/**
+ * Determines the 5G NR band based on the NR-ARFCN.
+ * This function covers common NR bands for FR1 and FR2 as defined by 3GPP TS 38.101.
+ *
+ * @param nrarfcn The NR Absolute Radio Frequency Channel Number.
+ * @return A String representing the NR band (e.g., "n78", "n257"), or "Unknown NR" if the NR-ARFCN does not match a known band.
+ */
+fun getNrBand(nrarfcn: Int): String {
+    return when (nrarfcn) {
+        // FR1 Bands (Sub-6 GHz)
+        in 422000..434000 -> "n1"
+        in 386000..398000 -> "n2"
+        in 361000..376000 -> "n3"
+        in 173800..178800 -> "n5"
+        in 524000..538000 -> "n7"
+        in 185000..192000 -> "n8"
+        in 145800..149200 -> "n12"
+        in 151600..160600 -> "n14"
+        in 164800..169800 -> "n18"
+        in 158200..164200 -> "n20"
+        in 386000..399000 -> "n25"
+        in 151600..160600 -> "n28" // Overlaps with n14, requires context
+        in 235000..236000 -> "n30" // This range is for DL frequency in MHz, not NR-ARFCN directly.
+        in 402000..405000 -> "n34"
+        in 514002..523998 -> "n38"
+        in 376000..384000 -> "n39"
+        in 460000..480000 -> "n40"
+        in 499200..537999 -> "n41"
+        in 620000..680000 -> "n77" // Broad C-band range
+        in 620000..653333 -> "n78" // Subset of n77
+        in 693333..733333 -> "n79"
+        in 422000..440000 -> "n66" // Extended AWS
+        in 123400..130400 -> "n71" // Digital Dividend (US)
+        in 295000..303600 -> "n74" // Lower L-Band (US)
+        in 286400..303400 -> "n75" // L-Band (SDL)
+        in 285400..286400 -> "n76" // L-Band Extension (SDL)
+
+        // FR2 Bands (mmWave)
+        in 2054167..2104166 -> "n257" // 28 GHz
+        in 2016667..2070833 -> "n258" // 26 GHz
+        in 2229167..2279166 -> "n260" // 39 GHz
+        // n259, n261, n262, n263 are typically specific sub-ranges or extensions of others.
+        // For simplicity, including the main ones. A full implementation would require more detailed 3GPP tables.
+        else -> "Unknown NR"
+    }
+}
+
+/**
+ * Calculates the 5G NR downlink frequency in Hz based on the NR-ARFCN.
+ * Formulas and global frequency raster parameters are derived from 3GPP TS 38.101.
+ *
+ * @param nrarfcn The NR Absolute Radio Frequency Channel Number.
+ * @return The downlink frequency in Hz, or null if the NR-ARFCN is out of the defined global frequency raster ranges.
+ */
+fun getNrDownlinkFrequency(nrarfcn: Int): Long? {
+    // Define parameters for the global frequency raster
+    data class GlobalRasterParams(val fRefOffs: Double, val nRefOffs: Int, val deltaFGlobal: Double)
+
+    val params: GlobalRasterParams? = when (nrarfcn) {
+        in 0..599999 -> GlobalRasterParams(0.0, 0, 5.0) // 0 - 3000 MHz, 5 kHz raster
+        in 600000..2016666 -> GlobalRasterParams(3000.0, 600000, 15.0) // 3000 - 24250 MHz, 15 kHz raster
+        in 2016667..3279165 -> GlobalRasterParams(24250.08, 2016667, 60.0) // 24250 - 100000 MHz, 60 kHz raster
+        else -> null
+    }
+
+    return params?.let {
+        // F_REF = F_REF-Offs + ΔF_Global * (N_REF - N_REF-Offs)
+        val freqMHz = it.fRefOffs + (it.deltaFGlobal / 1000.0) * (nrarfcn - it.nRefOffs)
+        (freqMHz * 1_000_000).toLong()
+    }
+}

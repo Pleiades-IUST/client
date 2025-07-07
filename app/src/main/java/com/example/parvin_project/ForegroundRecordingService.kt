@@ -204,7 +204,6 @@ class ForegroundRecordingService : LifecycleService() {
         } else {
             displayString.append("  Cell Status: ${cellInfoData?.errorMessage ?: "N/A"}\n")
         }
-        displayString.append("  Frequency: ${cellInfoData?.frequencyHz}\n")
 
         return displayString.toString()
     }

@@ -72,14 +72,12 @@ class CellInfoCollector(private val context: Context) {
         val signal = cellInfo.cellSignalStrength
         val arfcn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) identity.arfcn else null
 
-        // --- CHANGE STARTS HERE ---
         // Ensure 'band' is a non-nullable String by providing a default value if arfcn is null
         val band: String = if (arfcn != null) {
             getGsmBand(arfcn) // getGsmBand (from your helpers) returns non-nullable String
         } else {
             "Unknown GSM" // Provide a default non-nullable string for the band
         }
-        // --- CHANGE ENDS HERE ---
 
         return CellInfoData(
             technology = "GSM",
@@ -87,8 +85,8 @@ class CellInfoCollector(private val context: Context) {
             lac = identity.lac.takeIf { it != CellInfo.UNAVAILABLE },
             cellId = identity.cid.toLong().takeIf { it != CellInfo.UNAVAILABLE.toLong() },
             arfcn = arfcn?.takeIf { it != CellInfo.UNAVAILABLE },
-            frequencyBand = band, // Now 'band' is guaranteed to be a non-nullable String
-            frequencyHz = arfcn?.let { getGsmDownlinkFrequency(it, band) }, // This is line 83, now 'band' is String
+            frequencyBand = band,
+            frequencyHz = arfcn?.let { getGsmDownlinkFrequency(it, band) },
             rxLev = signal.dbm.takeIf { it != CellInfo.UNAVAILABLE }
         )
     }
@@ -139,15 +137,23 @@ class CellInfoCollector(private val context: Context) {
         val identity = cellInfo.cellIdentity as CellIdentityNr
         val signal = cellInfo.cellSignalStrength as CellSignalStrengthNr
 
+        // Get NR-ARFCN
+        val nrarfcn = identity.nrarfcn.takeIf { it != CellInfo.UNAVAILABLE }
+
+        // Determine NR band using the helper
+        val nrBand = nrarfcn?.let { getNrBand(it) } ?: "Unknown NR"
+
+        // Calculate NR downlink frequency using the helper
+        val nrFrequencyHz = nrarfcn?.let { getNrDownlinkFrequency(it) }
+
         return CellInfoData(
             technology = "5G NR",
             plmnId = getPlmnId(identity.mccString, identity.mncString),
             tac = identity.tac.takeIf { it != CellInfo.UNAVAILABLE },
             cellId = identity.nci.takeIf { it != CellInfo.UNAVAILABLE.toLong() },
-            nrarfcn = identity.nrarfcn.takeIf { it != CellInfo.UNAVAILABLE },
-            frequencyBand = if (identity.bands.isNotEmpty()) "n${identity.bands[0]}" else null,
-            // Frequency calculation from NR-ARFCN is too complex for a simple helper function.
-            frequencyHz = null,
+            nrarfcn = nrarfcn,
+            frequencyBand = nrBand, // Use the determined NR band
+            frequencyHz = nrFrequencyHz, // Use the calculated NR frequency
             rsrp = signal.ssRsrp.takeIf { it != CellInfo.UNAVAILABLE },
             rsrq = signal.ssRsrq.takeIf { it != CellInfo.UNAVAILABLE }
         )
